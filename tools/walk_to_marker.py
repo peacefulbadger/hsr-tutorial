@@ -135,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
     sweeps_in_direction = 0
     sweep_direction = 1
     missing_pip = OCCLUSION_TOLERANCE + 1  # nothing seen yet, so a sweep is fair game
+    last_metres: int | None = None
+    near_readings = 0
 
     for step in range(1, args.steps + 1):
         frame = fetch(base)
@@ -153,6 +155,13 @@ def main(argv: list[str] | None = None) -> int:
 
         view = minimap.read(frame)
         pip = world_pip(ocr, frame)
+        # The distance label is OCR'd digits, and OCR misreads them: "79m" came back as
+        # "3m" and then "1m" on consecutive frames, which reads as a teleport and then as
+        # an arrival. Walking is continuous, so enforce that instead of trusting one frame.
+        if pip is not None and last_metres is not None and abs(pip[2] - last_metres) > 15:
+            print(f"step {step:02d}: ignoring implausible distance {pip[2]}m "
+                  f"(last {last_metres}m)")
+            pip = None
         # Near the objective the pip and the arrow start to overlap on the disc, which
         # corrupts the dart's shape; a low-confidence facing is worse than none, because
         # it turns into a confident push in the wrong direction.
@@ -160,10 +169,19 @@ def main(argv: list[str] | None = None) -> int:
 
         if pip is not None:
             pip_x, pip_y, metres = pip
+            last_metres = metres
             if metres <= args.stop_m:
-                cv2.imwrite(str(args.out / "walker-arrived.jpg"), frame)
-                print(f"step {step:02d}: arrived ({metres}m) pip@({pip_x},{pip_y})")
-                return 0
+                # One reading is not an arrival: require it twice, so a single misread
+                # digit cannot end the walk 60 m short.
+                near_readings += 1
+                if near_readings >= 2:
+                    cv2.imwrite(str(args.out / "walker-arrived.jpg"), frame)
+                    print(f"step {step:02d}: arrived ({metres}m) pip@({pip_x},{pip_y})")
+                    return 0
+                print(f"step {step:02d}: {metres}m, confirming arrival")
+                time.sleep(0.4)
+                continue
+            near_readings = 0
 
             if motion < 3.0:
                 stuck_steps += 1

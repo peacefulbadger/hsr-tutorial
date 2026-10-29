@@ -30,8 +30,12 @@ from adapters.game_hsr.perception import HsrPerception, RapidOcr  # noqa: E402
 # This layout is the 1280x720 one measured off captured frames; the button sits slightly
 # lower and further right than the naive "bottom right corner" guess.
 ACTION_BUTTON = (1045, 590)
-# Ultimate sits on the character portrait, bottom-left, and only lights up at full energy.
-ULTIMATE_BUTTON = (230, 590)
+# Ultimate sits on the party portraits, bottom-left, and only glows at full energy. Which
+# portrait glows changes with who is charged, so the point is measured, not fixed: the
+# charged circle is the brightest blob in this region. (Hard-coding (230,590) pressed the
+# first slot no matter which character was ready and did nothing for hundreds of seconds.)
+ULTIMATE_REGION = (150, 460, 520, 220)
+ULTIMATE_FALLBACK = (430, 570)
 # Continue affordances: reward screens and dialogues advance on a click near the centre.
 CONTINUE_POINT = (640, 400)
 STOP_ON = {"dialogue", "dialogue_choice", "reward"}
@@ -41,6 +45,34 @@ STOP_ON = {"dialogue", "dialogue_choice", "reward"}
 TAP_THROUGH = {"combat", "unknown"}
 
 
+def ultimate_point(frame: np.ndarray) -> tuple[int, int]:
+    """Centre of the glowing ultimate button, or the middle of the left party row.
+
+    A charged ultimate draws a bright cyan ring around its portrait. Ultimates can be used
+    out of turn -- the tutorial asks for one *while the enemy is acting* -- so which
+    character is charged is the only thing that decides where to press.
+    """
+    x, y, w, h = ULTIMATE_REGION
+    crop = frame[y:y + h, x:x + w]
+    if crop.size == 0:
+        return ULTIMATE_FALLBACK
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    value, saturation = hsv[:, :, 2], hsv[:, :, 1]
+    glow = ((value > 200) & (saturation > 90)).astype(np.uint8)
+    glow = cv2.morphologyEx(glow, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    count, _labels, stats, centroids = cv2.connectedComponentsWithStats(glow, 8)
+    best, best_area = None, 0
+    for index in range(1, count):
+        area = int(stats[index, cv2.CC_STAT_AREA])
+        if area > best_area:
+            best, best_area = index, area
+    if best is None or best_area < 200:
+        return ULTIMATE_FALLBACK
+    cx, cy = centroids[best]
+    return int(x + cx), int(y + cy)
+
+
+
 def tutorial_request(boxes) -> str | None:
     """What the tutorial banner is asking for, when it is asking for something.
 
@@ -48,12 +80,30 @@ def tutorial_request(boxes) -> str | None:
     attack tap into that state is discarded and the fight silently stops progressing.
     Its banner says which press it wants in plain words, which is the only reliable
     signal -- the button it highlights is drawn differently every time it changes.
+
+    The banner is also *sticky*: it keeps saying "activate your Ultimate" while the
+    enemy is acting, because the ultimate is still ready. Pressing then does nothing (the
+    button is inert), so the caller has to combine this with `whose_turn`.
     """
     for box in boxes:
         text = box.text.lower()
         if "activate your ultimate" in text or "ultimate now" in text:
             return "ultimate"
     return None
+
+
+def whose_turn(boxes) -> str:
+    """'ours', 'enemy', or 'unknown', from the turn banner.
+
+    Tapping during the enemy's turn is a no-op at best; the ultimate button in particular
+    sits on the party portraits, so repeated presses there risk switching characters.
+    """
+    compact = "".join(ch for ch in " ".join(b.text for b in boxes).lower() if ch.isalnum())
+    if "enemysturn" in compact:
+        return "enemy"
+    if "yourturn" in compact:
+        return "ours"
+    return "unknown"
 
 
 def fetch(base: str) -> np.ndarray:
@@ -85,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     deadline = time.monotonic() + args.seconds
     last = ""
     seen_combat = False
+    stop_confirmations = 0
     while time.monotonic() < deadline:
         frame = fetch(base)
         screen, confidence, _features, boxes = perception.analyze(frame)
@@ -96,19 +147,38 @@ def main(argv: list[str] | None = None) -> int:
 
         if screen in TAP_THROUGH:
             seen_combat = True
+            turn = whose_turn(boxes)
             request = tutorial_request(boxes)
-            point = ULTIMATE_BUTTON if request == "ultimate" else ACTION_BUTTON
-            if request is not None:
-                print(f"{time.strftime('%H:%M:%S')} tutorial asks for {request} -> tap {point}")
+            if request == "ultimate":
+                # Ultimates interrupt, so this is the one press that is wanted during the
+                # enemy's turn. Anything else can wait for ours.
+                point = ultimate_point(frame)
+                print(f"{time.strftime('%H:%M:%S')} tutorial asks for the ultimate "
+                      f"({turn}) -> tap {point}")
+                if not args.dry_run:
+                    act(base, {"type": "tap", "x": point[0], "y": point[1]})
+                time.sleep(args.interval)
+                continue
+            if turn == "enemy":
+                time.sleep(args.interval)
+                continue
             if not args.dry_run:
-                act(base, {"type": "tap", "x": point[0], "y": point[1]})
+                act(base, {"type": "tap", "x": ACTION_BUTTON[0], "y": ACTION_BUTTON[1]})
             time.sleep(args.interval)
             continue
 
         if screen in STOP_ON and seen_combat:
+            # Combat frames flicker: a damage number or an ultimate banner in the subtitle
+            # band reads as "dialogue" for one frame. Stopping on that leaves the fight
+            # half-finished, so demand the state twice before believing it.
+            stop_confirmations += 1
+            if stop_confirmations < 2:
+                time.sleep(args.interval)
+                continue
             cv2.imwrite(str(args.out / f"fight-stopped-{screen}.jpg"), frame)
             print(f"stopped on {screen}; saved fight-stopped-{screen}.jpg")
             return 0
+        stop_confirmations = 0
 
         if screen == "reward":
             if not args.dry_run:

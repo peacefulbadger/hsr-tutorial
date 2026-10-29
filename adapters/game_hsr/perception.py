@@ -54,6 +54,9 @@ MENU_KEYWORDS = ("startgame", "taptostart", "logout", "notices", "settings")
 REWARD_KEYWORDS = ("battleover", "victory", "rewards", "challengecomplete")
 COMBAT_KEYWORDS = (
     "basicatk", "selecttheenemy", "switchtoskills", "singletarget", "blast", "attack",
+    # Between turns the action button hides and the teal ring goes with it, which used to
+    # drop the frame into "dialogue" mid-fight. The turn banner stays put throughout.
+    "yourturn", "enemysturn", "totaldamage", "weaknessbreak", "voidranger",
 )
 
 
