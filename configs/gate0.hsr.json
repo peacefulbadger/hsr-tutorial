@@ -1,0 +1,18 @@
+{
+  "name": "HSR tutorial foothold (MuMuPlayerGlobal 12.0, 1280x720, EN)",
+  "sidecar_url": "http://10.0.0.1:8765",
+  "adb_path": "C:\\Program Files\\Netease\\MuMuPlayerGlobal-12.0\\nx_device\\12.0\\shell\\adb.exe",
+  "serial": "127.0.0.1:16384",
+  "steps": [
+    {"type": "wait_focus", "package": "com.HoYoverse.hkrpgoversea", "timeout_s": 60.0},
+    {"type": "wait_loaded", "label": "title", "min_brightness": 25.0, "timeout_s": 120.0, "settle_s": 10.0},
+    {"type": "tap_until_brightness", "label": "start-game", "x": 640, "y": 518, "min_brightness": 90.0, "max_attempts": 6, "interval_s": 7.0},
+    {"type": "wait_loaded", "label": "tap-to-start", "min_brightness": 90.0, "timeout_s": 60.0, "settle_s": 2.0},
+    {"type": "tap", "label": "enter-game", "x": 640, "y": 650, "after_s": 3.0},
+    {"type": "wait_loaded", "label": "in-game", "min_brightness": 60.0, "timeout_s": 180.0, "settle_s": 5.0},
+    {"type": "capture", "label": "before-tap", "max_age_ms": 500.0},
+    {"type": "tap", "x": 640, "y": 680, "after_s": 1.5},
+    {"type": "capture", "label": "after-tap", "max_age_ms": 500.0},
+    {"type": "assert_change", "before": "before-tap.jpg", "after": "after-tap.jpg", "min_mad": 1.0}
+  ]
+}

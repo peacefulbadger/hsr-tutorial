@@ -101,16 +101,37 @@ Two conclusions that contradict the plan's assumptions:
 Gate: *a script resets the account, launches the client, captures a frame over
 LAN, taps the first screen, and captures the next.*
 
+`tools/gate0.py --config configs/gate0.hsr.json` runs the whole sequence. Last
+run: **12/12 checks in 98.7 s**, from this host.
+
 - [x] adb connected, `screencap` + `input` verified at 1280x720
 - [x] sidecar serves frames with timestamps, dispatches taps
 - [x] LAN reachable at `http://10.0.0.1:8765` (python.exe inbound rules present)
-- [x] tap advanced the dialogue and the next frame shows it (see `data/phase0/`)
-- [x] `EmulatorController.reset_app()` (force-stop + relaunch)
-- [ ] **account reset against the private server admin path** 窶・blocked, needs
-      server admin credentials/URL from you
-- [ ] **measured from 10.0.0.2** 窶・no SSH key here (`Permission denied
-      (publickey,password)`); run `tools/check_lan.py` on the laptop
-- [ ] Mica standing up on the 3080 Ti (Phase 0 item 3, not started)
+- [x] relaunch -> title -> "Start Game" -> "Tap to Start" -> in-game, then
+      capture -> tap -> capture with the pixels changing (12/12)
+- [x] `EmulatorController.reset_app()`: force-stop, relaunch, process up in ~1.1 s
+- [ ] **account reset** -- the script relaunches the client, which is *not* an
+      account reset: tutorial progress is checkpointed server-side and survives a
+      relaunch (verified: it resumed on the same dialogue line). Needs the
+      private server's admin path, or an explicit "relaunch is enough".
+- [ ] **measured from 10.0.0.2** -- no SSH key here. One command on the laptop:
+      `python tools/check_lan.py --url http://10.0.0.1:8765`
+
+### Reset cost, measured
+
+Relaunch to playable takes **~99 s**: ~1 s to relaunch, ~15 s of black while the
+client boots, ~40 s before the SDK accepts input on the title screen (the script
+retries the tap until brightness jumps), ~25 s to load the scene. Anything that
+resets per episode pays this, so the "reset flow too slow for iteration" risk in
+the plan is real, and an emulator snapshot path matters.
+
+### Traps found while writing the gate
+
+- The client has no readable "ready" state; brightness is the cheapest proxy
+  (title ~47, "Tap to Start" ~120, in-game ~97). Pixel diff is useless on the
+  title screen because its background drifts, which produced a false positive
+  and cost a whole failing run.
+- A single tap is unreliable: the SDK appears ~40 s before it accepts input.
 
 ## Layout
 
