@@ -129,3 +129,58 @@ def test_camera_yaw_and_its_inverse_agree():
 def test_camera_yaw_needs_both_markers():
     assert minimap.camera_yaw(None, 100.0) is None
     assert minimap.camera_yaw(90.0, None) is None
+
+
+# --- more than one objective diamond on the disc -------------------------------------
+
+
+def _pips_frame(diamonds, facing=0.0):
+    """`diamonds` is a list of (bearing_deg, distance_px, half_width_px)."""
+    hsv = np.zeros((FRAME_H, FRAME_W, 3), np.uint8)
+    cx, cy = minimap.MINIMAP_CENTRE
+    cv2.circle(hsv, (cx, cy), minimap.MINIMAP_RADIUS, (100, 20, 30), -1)
+    pts = _rotate(DART, facing)
+    poly = np.array([[cx + x, cy + y] for x, y in pts], np.int32)
+    cv2.fillPoly(hsv, [poly], (95, 220, 255))
+    for bearing, distance, half in diamonds:
+        px = cx + distance * math.sin(math.radians(bearing))
+        py = cy - distance * math.cos(math.radians(bearing))
+        diamond = np.array([[px, py - half], [px + half, py], [px, py + half],
+                            [px - half, py]], np.int32)
+        cv2.fillPoly(hsv, [diamond], (25, 200, 255))
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
+def test_every_diamond_on_the_disc_is_counted():
+    # "Investigating the terminals 0/2" puts a labelled diamond on each terminal, and a
+    # chest shares the colour. The reader has to admit there is a choice to make.
+    view = minimap.read(_pips_frame([(90, 40, 5), (270, 40, 6)]))
+    assert view.pip_candidates == 2
+    assert view.has_pip
+
+
+def test_the_largest_diamond_wins_when_there_is_nothing_to_go_on():
+    view = minimap.read(_pips_frame([(90, 40, 6), (270, 40, 8)]))
+    assert abs(minimap_signed(view.bearing_deg - 270.0)) < 10.0
+
+
+def test_a_known_bearing_keeps_the_same_diamond_next_frame():
+    # The pip must not flip between the two terminals because one sparkled brighter: a
+    # flip is a 200 deg change of objective and the walker turns round and walks back.
+    first = minimap.read(_pips_frame([(90, 40, 6), (270, 40, 8)]), prefer_bearing=90.0)
+    second = minimap.read(_pips_frame([(90, 40, 8), (270, 40, 6)]), prefer_bearing=90.0)
+    assert abs(minimap_signed(first.bearing_deg - 90.0)) < 10.0
+    assert abs(minimap_signed(second.bearing_deg - 90.0)) < 10.0
+
+
+def test_the_objective_is_followed_when_the_old_one_disappears():
+    # Completing a terminal removes its marker, so the only diamond left is the next one.
+    view = minimap.read(_pips_frame([(270, 40, 8)]), prefer_bearing=90.0)
+    assert abs(minimap_signed(view.bearing_deg - 270.0)) < 10.0
+
+
+def test_a_sparkle_fragment_does_not_steal_the_pip():
+    # A stray antialiased blob next to a diamond can sit at almost any bearing; it is too
+    # small to be a marker and must not win on the tie-break.
+    view = minimap.read(_pips_frame([(90, 40, 7), (10, 30, 3)]), prefer_bearing=10.0)
+    assert abs(minimap_signed(view.bearing_deg - 90.0)) < 12.0

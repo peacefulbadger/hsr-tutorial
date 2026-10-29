@@ -36,6 +36,9 @@ import numpy as np
 MINIMAP_CENTRE = (105, 130)
 MINIMAP_RADIUS = 70
 PIP_RIM_PX = 52.0
+# How far the objective may appear to move between two frames and still be the same
+# objective. The two terminals of a "0/2" quest sit ~200 deg apart on the disc.
+PIP_SWITCH_TOL_DEG = 70.0
 
 # The arrow is a small, very saturated cyan dart. Thresholds are deliberately high:
 # the minimap is tinted teal in places (the camera's view cone and the corridor floor),
@@ -59,6 +62,10 @@ class MinimapView:
     bearing_deg: float | None  # direction from player to objective, 0 = up, clockwise
     pip_distance_px: float | None
     pip_at_rim: bool          # True: direction is good, distance is clipped
+    # How many objective-looking diamonds were on the disc. The tutorial puts one on each
+    # terminal, and every chest and anchor shares the colour, so "the largest gold blob"
+    # is only a guess -- this says whether the guess was contested.
+    pip_candidates: int = 1
 
     @property
     def has_pip(self) -> bool:
@@ -199,17 +206,24 @@ def _facing(blob: np.ndarray) -> tuple[float | None, float]:
     return _facing_by_profile(blob)
 
 
-def _pip_mask(disc: np.ndarray) -> np.ndarray | None:
+def _pip_candidates(disc: np.ndarray) -> list[tuple[float, float, int]]:
+    """Every gold diamond on the disc, largest first, as (x, y, area).
+
+    Returning all of them is the whole point: the objective pip and the other labelled
+    markers share one colour, and a chest or an anchor looks identical. Picking "the
+    largest" makes the read flip between two of them from frame to frame, which swings the
+    objective bearing by 200 degrees and sends the walker the wrong way.
+    """
     hsv = cv2.cvtColor(disc, cv2.COLOR_BGR2HSV)
     hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
     mask = ((hue >= 15) & (hue <= 42) & (sat > 130) & (val > 170)).astype(np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
     if count <= 1:
-        return None
+        return []
     # The pip is a compact diamond of a few dozen pixels; the quest-panel diamonds and
     # text antialiasing live outside the disc, but the rim highlight can creep in.
-    best, best_area = None, 0
+    found: list[tuple[float, float, int]] = []
     for i in range(1, count):
         area = int(stats[i, cv2.CC_STAT_AREA])
         w, h = int(stats[i, cv2.CC_STAT_WIDTH]), int(stats[i, cv2.CC_STAT_HEIGHT])
@@ -217,34 +231,65 @@ def _pip_mask(disc: np.ndarray) -> np.ndarray | None:
             continue
         if max(w, h) > 3.2 * max(min(w, h), 1):  # elongated: a rim sliver, not a diamond
             continue
-        if area > best_area:
-            best, best_area = i, area
-    if best is None:
-        return None
-    return (labels == best).astype(np.uint8)
+        found.append((float(centroids[i][0]), float(centroids[i][1]), area))
+    return sorted(found, key=lambda candidate: candidate[2], reverse=True)
 
 
-def read(frame_bgr: np.ndarray) -> MinimapView:
-    """Read arrow position, facing, and objective bearing from one frame."""
+def _pick_pip(candidates: list[tuple[float, float, int]],
+              player: tuple[float, float],
+              prefer_bearing: float | None) -> int:
+    """Index of the candidate most likely to be the objective.
+
+    With nothing to go on it is the largest. With a previous bearing it is the largest one
+    that keeps the objective where it was: a marker does not teleport across the room
+    between two frames, so a candidate 200 degrees away is the *other* terminal.
+
+    The size filter is what stops a sparkle fragment from winning: at this resolution a
+    real diamond is 30-130 px and a stray antialiased blob is under 20, so anything less
+    than a third of the biggest is not a marker at all.
+    """
+    largest = max(candidate[2] for candidate in candidates)
+    solid = [index for index, candidate in enumerate(candidates)
+             if candidate[2] >= 0.35 * largest]
+    if prefer_bearing is None:
+        return solid[0]
+
+    def miss(index: int) -> float:
+        x, y, _ = candidates[index]
+        bearing = math.degrees(math.atan2(x - player[0], -(y - player[1]))) % 360.0
+        return abs((bearing - prefer_bearing + 180.0) % 360.0 - 180.0)
+
+    near = [index for index in solid if miss(index) <= PIP_SWITCH_TOL_DEG]
+    return max(near or solid, key=lambda index: candidates[index][2])
+
+
+def read(frame_bgr: np.ndarray, prefer_bearing: float | None = None) -> MinimapView:
+    """Read arrow position, facing, and objective bearing from one frame.
+
+    `prefer_bearing` is the objective's last known bearing. When the disc carries more than
+    one candidate diamond -- which it does for the whole of a "0/2 terminals" objective --
+    it decides which one is the quest's. Pass None to take the largest.
+    """
     disc = _disc(frame_bgr)
     if disc.size == 0:
         raise ValueError("frame too small for the minimap region")
 
     arrow = _arrow_mask(disc)
     if arrow is None:
-        return MinimapView(0.0, 0.0, None, 0.0, None, None, None, None, False)
+        return MinimapView(0.0, 0.0, None, 0.0, None, None, None, None, False,
+                           pip_candidates=0)
 
     ys, xs = np.nonzero(arrow)
     player_x, player_y = float(xs.mean()), float(ys.mean())
     facing, confidence = _facing(arrow)
 
-    pip = _pip_mask(disc)
-    if pip is None:
+    candidates = _pip_candidates(disc)
+    if not candidates:
         return MinimapView(player_x, player_y, facing, confidence,
-                           None, None, None, None, False)
+                           None, None, None, None, False, pip_candidates=0)
 
-    pys, pxs = np.nonzero(pip)
-    pip_x, pip_y = float(pxs.mean()), float(pys.mean())
+    chosen = candidates[_pick_pip(candidates, (player_x, player_y), prefer_bearing)]
+    pip_x, pip_y = chosen[0], chosen[1]
     dx, dy = pip_x - player_x, pip_y - player_y
     distance = math.hypot(dx, dy)
     bearing = math.degrees(math.atan2(dx, -dy)) % 360.0
@@ -253,6 +298,7 @@ def read(frame_bgr: np.ndarray) -> MinimapView:
         facing_deg=facing, facing_confidence=confidence,
         pip_x=pip_x, pip_y=pip_y, bearing_deg=bearing,
         pip_distance_px=distance, pip_at_rim=distance >= PIP_RIM_PX - 4.0,
+        pip_candidates=len(candidates),
     )
 
 
