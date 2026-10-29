@@ -236,13 +236,43 @@ cost several failed attempts:
 | Marker | Where | What it tells you |
 |---|---|---|
 | world pip | in the 3D scene, with an `Nm` label | the objective's position. Moves with character position *and* camera orientation, so its screen x is a fine steering error once it is visible |
-| minimap pip | inside the minimap circle, player is the cyan arrow | coarse bearing only -- enough to decide which way to rotate the camera when the world pip is off-screen |
+| minimap pip | inside the minimap circle, player is the cyan arrow | a *world* bearing to the objective. Clamped to the rim beyond minimap range, so the direction survives when the distance does not |
 | quest panel pip | fixed UI, left side | decoration; it never moves |
 
-The two live markers are a coarse/fine pair, and using them together is what
-makes approaching a target work: the minimap says *which way to look*, the world
-pip says *how to walk* once you can see it. `tools/walk_to_marker.py` implements
-exactly that loop and took the character from a doorway to 1 m of an objective.
+Two things about the minimap had to be measured rather than assumed, because the
+naive reading of it is wrong:
+
+- **The disc does not rotate when the camera free-looks.** Rotating the camera with
+  a right-half drag and matching the disc against itself gives a best-match rotation
+  of 0.0 deg, clearly beating +-1 deg, while the 3D scene visibly turns. So a pip
+  offset is a bearing in the world, not a "turn the camera this much" instruction.
+  Using it as one is a bug that shows up whenever the camera and the character
+  disagree, which near a wall is most of the time.
+- **The cyan arrow is the character's facing, and it is readable.** The icon is a
+  dart: solid nose, V-notch in the tail. Filling the convex hull and taking the
+  largest uncovered piece finds the notch, and the nose points from the notch
+  through the body. Measured against a dart pointing straight down it reads
+  172.8 / 176.4 / 173.0 deg where a principal-axis fit reads 215 / 208 / 215.
+  `adapters/game_hsr/minimap.py` does this; the notch estimator is primary and an
+  axis-profile fallback covers the notch-less case.
+
+With facing known, the world bearing becomes a controllable error, because pushing
+the stick turns the character to face the push. Holding the camera still, a push at
+stick angle `s` makes her face world angle `yaw + s`, so correcting `s` by
+`bearing - facing` converges without ever knowing `yaw`. `tools/walk_to_marker.py`
+runs that as an explicit heading phase, then a camera-sweep phase to bring the world
+pip on screen, then screen-space steering. Measured: 177 deg of heading error in two
+pushes, then the pip found after two sweeps, then 39 m to 8 m of walking.
+
+The two live markers are still a coarse/fine pair -- the minimap says *which way to
+face*, the world pip says *how to walk* once you can see it -- but the coarse half
+is the arrow's facing, not a camera correction in disguise.
+
+Trap: the pip's `Nm` distance reads as an arrival when it is not. Standing at 5 m
+with the tutorial banner *"Attack selected enemy to trigger combat"* up, the stick
+does nothing: the game is gated on a tap, and the loop that only walks reports a
+stuck character. Check for a tutorial instruction before concluding the walk failed.
+
 
 Interaction is a labelled button, named after the object: `Investigate` at one
 console, `Controller` at another. Since the label is arbitrary, detection is

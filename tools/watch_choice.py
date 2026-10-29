@@ -46,8 +46,15 @@ def fetch(base: str):
         return np.frombuffer(response.read(), np.uint8)
 
 
-def looks_like_choices(boxes, crop_x: int, crop_y: int, min_gap: int = MIN_OPTION_GAP) -> list[dict]:
-    """Find a vertical stack of short option lines."""
+def looks_like_choices(boxes, crop_x: int, crop_y: int, min_gap: int = MIN_OPTION_GAP,
+                       exclude: tuple[int, int, int, int] | None = SUBTITLE_REGION) -> list[dict]:
+    """Find a vertical stack of short option lines.
+
+    Two things that look like a stack but are not: a name plate above a subtitle, and the
+    wrapped last line of that subtitle. Both are rejected structurally -- option lines are
+    all rendered in one font, so their heights match, and none of them lives inside the
+    subtitle band, whereas the speaker's line always does.
+    """
     candidates = []
     for box in boxes:
         x, y, w, h = box.bbox
@@ -55,7 +62,10 @@ def looks_like_choices(boxes, crop_x: int, crop_y: int, min_gap: int = MIN_OPTIO
             continue
         if len(box.text) < 2 or len(box.text) > 60:
             continue
-        candidates.append({"text": box.text, "bbox": [x + crop_x, y + crop_y, w, h],
+        absolute = (x + crop_x, y + crop_y, w, h)
+        if exclude is not None and _centre_inside(absolute, exclude):
+            continue
+        candidates.append({"text": box.text, "bbox": list(absolute),
                            "confidence": round(box.confidence, 3)})
 
     # Group by x alignment: options share a left edge within ~60px.
@@ -73,10 +83,20 @@ def looks_like_choices(boxes, crop_x: int, crop_y: int, min_gap: int = MIN_OPTIO
     for group in groups:
         if len(group) < 2:
             continue
+        heights = [item["bbox"][3] for item in group]
+        if max(heights) - min(heights) > 8:
+            continue
         gaps = [group[i + 1]["bbox"][1] - group[i]["bbox"][1] for i in range(len(group) - 1)]
         if all(min_gap <= gap <= MAX_OPTION_GAP for gap in gaps):
             return group
     return []
+
+
+def _centre_inside(bbox, region) -> bool:
+    x, y, w, h = bbox
+    rx, ry, rw, rh = region
+    cx, cy = x + w / 2.0, y + h / 2.0
+    return rx <= cx <= rx + rw and ry <= cy <= ry + rh
 
 
 def main(argv: list[str] | None = None) -> int:
