@@ -228,6 +228,36 @@ tries to downgrade numpy, which breaks the pinned opencv build, then dies on a
 locked `cv2.pyd`. RapidOCR runs the same PP-OCR models on onnxruntime and installs
 in 7 s. `OcrEngine` is a Protocol, so swapping PaddleOCR in later is one class.
 
+## Navigating the world (what the markers mean)
+
+Three gold diamonds exist and they are not interchangeable. Getting this wrong
+cost several failed attempts:
+
+| Marker | Where | What it tells you |
+|---|---|---|
+| world pip | in the 3D scene, with an `Nm` label | the objective's position. Moves with character position *and* camera orientation, so its screen x is a fine steering error once it is visible |
+| minimap pip | inside the minimap circle, player is the cyan arrow | coarse bearing only -- enough to decide which way to rotate the camera when the world pip is off-screen |
+| quest panel pip | fixed UI, left side | decoration; it never moves |
+
+The two live markers are a coarse/fine pair, and using them together is what
+makes approaching a target work: the minimap says *which way to look*, the world
+pip says *how to walk* once you can see it. `tools/walk_to_marker.py` implements
+exactly that loop and took the character from a doorway to 1 m of an objective.
+
+Trap: the world pip's `Nm` label is near the objective, not necessarily the thing
+to press. At 1 m the pip can be marking a doorway or a trigger volume, in which
+case there is no interaction prompt at all and walking through it is the answer.
+
+## Controls that actually move the character
+
+- Left stick is a virtual analogue stick at (250, 570); a swipe from there moves.
+  Camera-relative, and the camera follows the heading, so repeated "up" swipes
+  curve rather than go straight.
+- Camera drags on the right half (around (950, 360)) rotate the view. Required to
+  face an interactable -- the `Investigate` prompt only appears when in range
+  *and* facing it.
+- Sprint toggles at (1180, 600).
+
 ## Layout
 
 ```
