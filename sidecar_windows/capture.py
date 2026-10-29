@@ -1,4 +1,4 @@
-﻿"""Background screencap loop.
+"""Background screencap loop.
 
 One thread, one adb call per iteration. The loop keeps the *latest* frame in
 memory; HTTP readers never wait for a capture, they get whatever the loop last

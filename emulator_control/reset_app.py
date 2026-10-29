@@ -7,7 +7,13 @@ a pure camera+finger, but it talks to the same adb instance.
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
+
+# Allow `python emulator_control/reset_app.py` as well as `python -m emulator_control.reset_app`.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sidecar_windows.adb import AdbClient, AdbConfig, AdbError
 

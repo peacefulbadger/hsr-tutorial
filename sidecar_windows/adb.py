@@ -1,4 +1,4 @@
-﻿"""Thin, synchronous wrapper around the Android Debug Bridge binary.
+"""Thin, synchronous wrapper around the Android Debug Bridge binary.
 
 Deliberately dumb: no game logic, no retries-and-heuristics, no state machine.
 The sidecar's job is to turn adb invocations into a byte stream and a dispatch
@@ -120,6 +120,7 @@ class AdbClient:
         binary: bool = False,
         timeout: float | None = None,
         with_serial: bool = True,
+        allow_failure: bool = False,
     ) -> AdbResult:
         argv = [self._adb_path]
         # `self._serial` does not exist until discovery finishes; `adb devices`
@@ -146,6 +147,8 @@ class AdbClient:
         duration_ms = (time.perf_counter() - t0) * 1000.0
 
         stderr = proc.stderr.decode("utf-8", "replace").strip()
+        if proc.returncode != 0 and allow_failure:
+            return AdbResult(proc.returncode, proc.stdout, stderr, duration_ms)
         if proc.returncode != 0:
             raise AdbError(
                 f"adb {' '.join(args)} exited {proc.returncode}: {stderr or '<no stderr>'}"
@@ -226,5 +229,7 @@ class AdbClient:
         return ""
 
     def package_running(self, package: str) -> bool:
-        out = self._run(["shell", "pidof", package]).stdout.decode("utf-8", "replace")
-        return bool(out.strip())
+        # `pidof` exits non-zero when the process is absent; that is a False,
+        # not an error.
+        result = self._run(["shell", "pidof", package], allow_failure=True)
+        return bool(result.stdout.decode("utf-8", "replace").strip())

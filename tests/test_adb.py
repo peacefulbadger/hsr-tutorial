@@ -89,3 +89,28 @@ def test_failed_command_raises_with_stderr(fake_run, monkeypatch):
     client = AdbClient(AdbConfig(serial="emulator-5554", adb_path=""))
     with pytest.raises(AdbError, match="device offline"):
         client.screencap_raw()
+
+
+def test_package_running_tolerates_absent_process(monkeypatch):
+    """`pidof` exits 1 when the process is gone; that is False, not an error."""
+    import sidecar_windows.adb as adb_module
+
+    monkeypatch.setattr(
+        adb_module.subprocess,
+        "run",
+        lambda argv, **kwargs: FakeProcess(b"", returncode=1),
+    )
+    client = AdbClient(AdbConfig(serial="emulator-5554"))
+    assert client.package_running("com.example.absent") is False
+
+
+def test_package_running_true_when_pid_present(monkeypatch):
+    import sidecar_windows.adb as adb_module
+
+    monkeypatch.setattr(
+        adb_module.subprocess,
+        "run",
+        lambda argv, **kwargs: FakeProcess(b"10241\r\n", returncode=0),
+    )
+    client = AdbClient(AdbConfig(serial="emulator-5554"))
+    assert client.package_running("com.HoYoverse.hkrpgoversea") is True

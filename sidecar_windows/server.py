@@ -1,4 +1,4 @@
-﻿"""Windows-side capture/actuator sidecar.
+"""Windows-side capture/actuator sidecar.
 
 Two endpoints carry the whole contract:
 
@@ -9,7 +9,7 @@ Two endpoints carry the whole contract:
 The sidecar holds no game knowledge. It is a remote-controlled camera and finger.
 
 Run:
-    py -m sidecar_windows.server --config configs\sidecar.toml
+    py -m sidecar_windows.server --config configs/sidecar.toml
 """
 
 from __future__ import annotations
@@ -20,6 +20,13 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
+
+import sys
+from pathlib import Path
+
+# Allow `python sidecar_windows/server.py` as well as `python -m sidecar_windows.server`.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
