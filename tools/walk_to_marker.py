@@ -56,6 +56,7 @@ STICK = (250, 570)
 SCREEN_CENTRE_X = 640
 
 HEADING_TOL_DEG = 25.0     # closer than this and the character is heading at the pip
+MAX_HEADING_STEP_DEG = 40.0  # a stick push never turns her more than this in one go
 MAX_SCREEN_PUSH_DEG = 45.0  # a pip at the screen edge means "push this far off axis"
 STICK_MAGNITUDE_PX = 170
 STICK_DURATION_MS = 750
@@ -134,7 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     stick_angle = 0.0        # screen angle the stick is being pushed at
     sweeps_in_direction = 0
     sweep_direction = 1
+    strafe_direction = 1
+    stalls = 0
     missing_pip = OCCLUSION_TOLERANCE + 1  # nothing seen yet, so a sweep is fair game
+    previous_pip: tuple[int, int] | None = None
     last_metres: int | None = None
     near_readings = 0
 
@@ -183,10 +187,16 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             near_readings = 0
 
-            if motion < 3.0:
+            # Stall from the pip, not from whole-frame motion: a scene with steam, particles
+            # or an idle NPC animation keeps the frame diff above any sensible threshold
+            # while the character is wedged against a wall, so the walk never noticed.
+            if (previous_pip is not None
+                    and abs(metres - previous_pip[0]) == 0
+                    and abs(pip_x - previous_pip[1]) <= 2):
                 stuck_steps += 1
             else:
                 stuck_steps = 0
+            previous_pip = (metres, pip_x)
             if stuck_steps >= 2:
                 # Standing at the objective and not moving is usually a door or a console,
                 # not a bad heading: the pip is centred and the walk is straight, so the
@@ -202,11 +212,17 @@ def main(argv: list[str] | None = None) -> int:
                     time.sleep(0.8)
                     continue
                 if not args.dry_run:
-                    push(base, 0, 80, 900)
-                    time.sleep(0.2)
-                    rotate(base, sweep_direction)
+                    # Sidestep rather than rotate: the pip is on screen and centred, and
+                    # rotating the camera throws away the only measurement that is not in
+                    # dispute here (the minimap can be reading a different gold diamond).
+                    side = 55.0 * strafe_direction
+                    push_at(base, wrap(stick_angle + side), magnitude_px=150,
+                            duration_ms=800)
+                strafe_direction *= -1
+                stalls += 1
                 stuck_steps = 0
-                print(f"step {step:02d}: stuck at {metres}m; backed off + rotated")
+                print(f"step {step:02d}: stuck at {metres}m; sidestepped "
+                      f"{'right' if strafe_direction > 0 else 'left'} ({stalls})")
                 time.sleep(0.3)
                 continue
 
@@ -240,7 +256,21 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         if heading_error is not None and abs(heading_error) > HEADING_TOL_DEG:
-            stick_angle = wrap(stick_angle + heading_error)
+            if abs(heading_error) > 120.0:
+                # A "turn around completely" reading is more likely two gold diamonds on
+                # one disc than a real 150 deg error -- they share a colour and the disc
+                # picks the largest. Sweeping the camera reacquires the world pip instead,
+                # which is a measurement rather than a guess.
+                if not args.dry_run:
+                    rotate(base, sweep_direction)
+                sweeps_in_direction += 1
+                print(f"step {step:02d}: heading error {heading_error:+.1f} deg is too "
+                      f"large to trust (facing {view.facing_deg}, objective "
+                      f"{view.bearing_deg}); sweeping camera instead")
+                time.sleep(0.35)
+                continue
+            correction = max(-MAX_HEADING_STEP_DEG, min(MAX_HEADING_STEP_DEG, heading_error))
+            stick_angle = wrap(stick_angle + correction)
             if not args.dry_run:
                 push_at(base, stick_angle)
             print(f"step {step:02d}: heading {heading_error:+6.1f} deg "
