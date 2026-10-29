@@ -129,15 +129,18 @@ class AdbClient:
         argv += args
 
         t0 = time.perf_counter()
+        effective_timeout = timeout or self.config.command_timeout_s
         try:
             proc = subprocess.run(
                 argv,
                 capture_output=True,
-                timeout=timeout or self.config.command_timeout_s,
+                timeout=effective_timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise AdbError(f"adb timed out after {timeout}s: {' '.join(args)}") from exc
+            raise AdbError(
+                f"adb timed out after {effective_timeout:g}s: {' '.join(args)}"
+            ) from exc
         except OSError as exc:
             raise AdbError(f"failed to run {argv[0]}: {exc}") from exc
         duration_ms = (time.perf_counter() - t0) * 1000.0

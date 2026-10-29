@@ -15,7 +15,7 @@ game knowledge and every decision lives elsewhere.
 
 ## Endpoints
 
-`GET /frame` — latest frame as `image/jpeg` (or `image/png` if configured), with
+`GET /frame` 窶・latest frame as `image/jpeg` (or `image/png` if configured), with
 timing headers:
 
 | Header | Meaning |
@@ -33,25 +33,31 @@ age_upper_ms = server_age_ms + rtt_ms
 ```
 
 `server_age_ms` is exact (same clock, both sides of the sidecar). `rtt_ms` is
-measured locally. The bound is pessimistic by at most one network leg — if it
+measured locally. The bound is pessimistic by at most one network leg 窶・if it
 passes your staleness budget, the truth passes too. `tools/check_lan.py` does
 exactly this.
 
-`POST /action` — `{"type": "tap", "x": 640, "y": 680}`, or
+`POST /action` 窶・`{"type": "tap", "x": 640, "y": 680}`, or
 `{"type": "swipe", "x":..,"y":..,"x2":..,"y2":..,"duration_ms":..}`,
 `{"type": "back"}`, `{"type": "wait", "duration_ms": ..}`.
 Coordinates are framebuffer pixels (1280x720), which is also the space
-`input tap` uses on this emulator build — verified by tapping and watching the
+`input tap` uses on this emulator build 窶・verified by tapping and watching the
 dialogue advance.
 
-`GET /health`, `GET /frame/meta`, `GET /stats` — diagnostics.
+`GET /health`, `GET /frame/meta`, `GET /stats` 窶・diagnostics.
 
 ## Run it
 
+Use a project venv: the global interpreter on this box carries an
+`opentelemetry` pin that recent `fastapi` releases fight with.
+
 ```powershell
-py -m pip install -r requirements.txt
-py -m sidecar_windows.server --config configs\sidecar.toml
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --no-cache-dir -r requirements.txt
+.\.venv\Scripts\python.exe -m sidecar_windows.server --config configs\sidecar.toml
 ```
+
+(`--no-cache-dir` avoids a pip cache-lock hang seen when two installs overlap.)
 
 Then from the Linux laptop:
 
@@ -59,7 +65,7 @@ Then from the Linux laptop:
 python tools/check_lan.py --url http://10.0.0.1:8765 --n 20
 ```
 
-Tests need no emulator, no adb, no network: `py -m pytest`
+Tests need no emulator, no adb, no network: `.\.venv\Scripts\python.exe -m pytest`
 
 ## Measured on this rig
 
@@ -82,13 +88,13 @@ End-to-end through HTTP, 15 samples:
 
 Two conclusions that contradict the plan's assumptions:
 
-1. **PNG is the wrong transport.** The plan assumed 1–4 Mbps and did not budget
+1. **PNG is the wrong transport.** The plan assumed 1窶・ Mbps and did not budget
    encode latency; on-device PNG compression costs 315 ms/frame and caps capture
    at 3 Hz. Fetching raw pixels and encoding JPEG here is 2.4x faster and 10x
    smaller per frame. `--frame-format png` exists if the literal contract matters.
 2. **Input latency is not the bottleneck, capture is.** A tap dispatches in 25 ms.
    Frame freshness is bounded below by one screencap (~132 ms), so no amount of
-   tick rate gets below ~200 ms p50. Plan settle delays around 300–400 ms.
+   tick rate gets below ~200 ms p50. Plan settle delays around 300窶・00 ms.
 
 ## Phase 0 gate status
 
@@ -100,9 +106,9 @@ LAN, taps the first screen, and captures the next.*
 - [x] LAN reachable at `http://10.0.0.1:8765` (python.exe inbound rules present)
 - [x] tap advanced the dialogue and the next frame shows it (see `data/phase0/`)
 - [x] `EmulatorController.reset_app()` (force-stop + relaunch)
-- [ ] **account reset against the private server admin path** — blocked, needs
+- [ ] **account reset against the private server admin path** 窶・blocked, needs
       server admin credentials/URL from you
-- [ ] **measured from 10.0.0.2** — no SSH key here (`Permission denied
+- [ ] **measured from 10.0.0.2** 窶・no SSH key here (`Permission denied
       (publickey,password)`); run `tools/check_lan.py` on the laptop
 - [ ] Mica standing up on the 3080 Ti (Phase 0 item 3, not started)
 
