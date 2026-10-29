@@ -244,6 +244,15 @@ makes approaching a target work: the minimap says *which way to look*, the world
 pip says *how to walk* once you can see it. `tools/walk_to_marker.py` implements
 exactly that loop and took the character from a doorway to 1 m of an objective.
 
+Interaction is a labelled button, named after the object: `Investigate` at one
+console, `Controller` at another. Since the label is arbitrary, detection is
+structural — a short, confidently-read text box inside the prompt region, not a
+keyword list. A keyword search for "investigate"/"interact"/"read" missed
+`Controller` for fourteen sweep attempts and looked exactly like "no prompt".
+
+The prompt only renders when the character is in range *and* facing the object,
+so a failed search means "turn further", not "nothing here".
+
 Trap: the world pip's `Nm` label is near the objective, not necessarily the thing
 to press. At 1 m the pip can be marking a doorway or a trigger volume, in which
 case there is no interaction prompt at all and walking through it is the answer.

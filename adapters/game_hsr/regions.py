@@ -61,6 +61,11 @@ TUTORIAL_BANNER = (400, 250, 560, 400)
 # blocking dialogue -- which is how a bark is told apart from a real one.
 HUD_ACTIONS = (990, 500, 270, 160)
 
+# The interaction prompt: a labelled button to the right of the character, named
+# after whatever the object is ("Investigate", "Controller", "Read"). The label is
+# arbitrary, so detection must be structural, not a keyword list.
+INTERACT_PROMPT = (700, 330, 560, 220)
+
 # --- shared ------------------------------------------------------------------
 
 # Where a modal choice list would render (no confirmed example in the current
@@ -77,4 +82,5 @@ FEATURE_REGIONS: dict[str, tuple[int, int, int, int]] = {
     "party_panel": PARTY_PANEL,
     "enemy_hp": ENEMY_HP,
     "hud_actions": HUD_ACTIONS,
+    "interact_prompt": INTERACT_PROMPT,
 }

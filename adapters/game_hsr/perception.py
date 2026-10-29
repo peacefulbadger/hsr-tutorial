@@ -46,6 +46,9 @@ SCREEN_TYPES = (
     "unknown",
 )
 
+# Text that lives in the prompt region but is not a prompt.
+HUD_TEXT = ("basezone", "kafka", "story", "chaosint", "gotomission", "uid")
+
 MENU_KEYWORDS = ("startgame", "taptostart", "logout", "notices", "settings")
 REWARD_KEYWORDS = ("battleover", "victory", "rewards", "challengecomplete")
 COMBAT_KEYWORDS = (
@@ -172,6 +175,31 @@ class HsrPerception:
 
     # ------------------------------------------------------------------ perception
 
+    def interact_prompt(self, boxes: list[TextBox]) -> InteractiveElement | None:
+        """The labelled button for the object in front of the character.
+
+        The label is the object's own name -- "Investigate", "Controller", "Read"
+        -- so it cannot be matched against a keyword list. Shape does the work:
+        a short, confidently-read label sitting in the prompt region.
+        """
+        rx, ry, rw, rh = R.INTERACT_PROMPT
+        for box in boxes:
+            x, y, w, h = box.bbox
+            if not _inside(box.bbox, R.INTERACT_PROMPT):
+                continue
+            if not (60 <= w <= 240 and 18 <= h <= 44):
+                continue
+            text = box.text.strip()
+            if len(text) < 4 or box.confidence < 0.6:
+                continue
+            if _norm(text).startswith(HUD_TEXT) or "mission" in _norm(text):
+                continue
+            return InteractiveElement(
+                id="interact", label=text, bbox=[x, y, w, h], kind="button",
+                confidence=round(box.confidence, 2),
+            )
+        return None
+
     def perceive(
         self,
         frame: np.ndarray,
@@ -235,6 +263,9 @@ class HsrPerception:
 
         else:
             text_blocks = []
+            prompt = self.interact_prompt(boxes)
+            if prompt is not None:
+                elements.append(prompt)
 
         return GameState(
             timestamp_ms=timestamp_ms,

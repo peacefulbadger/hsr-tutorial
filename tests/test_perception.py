@@ -215,3 +215,20 @@ def test_bark_surfaces_text_but_no_action(perception):
 def test_blocking_dialogue_still_offers_continue(perception):
     state = perception.perceive(load("dialogue"), frame_path="x.jpg")
     assert [e.id for e in state.interactive_elements] == ["continue"]
+
+@needs_ocr
+def test_interact_prompt_is_detected_by_shape_not_keyword(perception):
+    """The prompt is named after the object ("Controller", "Investigate", "Read"),
+    so the label cannot be matched against a keyword list. This one defeated an
+    earlier keyword-based search for 14 sweep attempts."""
+    state = perception.perceive(load("interact_prompt"), frame_path="x.jpg")
+    prompts = [e for e in state.interactive_elements if e.id == "interact"]
+    assert len(prompts) == 1
+    assert prompts[0].label == "Controller"
+    assert prompts[0].kind == "button"
+
+
+@needs_ocr
+def test_no_interact_prompt_when_standing_away(perception):
+    state = perception.perceive(load("exploration"), frame_path="x.jpg")
+    assert [e for e in state.interactive_elements if e.id == "interact"] == []
