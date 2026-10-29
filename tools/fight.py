@@ -30,6 +30,10 @@ from adapters.game_hsr.perception import HsrPerception, RapidOcr  # noqa: E402
 # This layout is the 1280x720 one measured off captured frames; the button sits slightly
 # lower and further right than the naive "bottom right corner" guess.
 ACTION_BUTTON = (1045, 590)
+# The skill sits above the basic attack, bottom-right, and is the one that costs a point.
+# The tutorial names it ("Switch to Skill") and highlights it, so it is worth distinguishing:
+# pressing the attack into that gate does nothing at all.
+SKILL_BUTTON = (1180, 500)
 # Ultimate sits on the party portraits, bottom-left, and only glows at full energy. Which
 # portrait glows changes with who is charged, so the point is measured, not fixed: the
 # charged circle is the brightest blob in this region. (Hard-coding (230,590) pressed the
@@ -145,6 +149,9 @@ def tutorial_request(boxes) -> str | None:
         text = box.text.lower()
         if "activate your ultimate" in text or "ultimate now" in text:
             return "ultimate"
+    compact = "".join(ch for ch in " ".join(b.text for b in boxes).lower() if ch.isalnum())
+    if "switchtoskill" in compact or "switchtoyourskill" in compact:
+        return "skill"
     return None
 
 
@@ -235,8 +242,11 @@ def main(argv: list[str] | None = None) -> int:
             if turn == "enemy":
                 time.sleep(args.interval)
                 continue
+            point = SKILL_BUTTON if request == "skill" else ACTION_BUTTON
+            if request == "skill":
+                print(f"{time.strftime('%H:%M:%S')} tutorial asks for the skill -> tap {point}")
             if not args.dry_run:
-                act(base, {"type": "tap", "x": ACTION_BUTTON[0], "y": ACTION_BUTTON[1]})
+                act(base, {"type": "tap", "x": point[0], "y": point[1]})
             time.sleep(args.interval)
             continue
 
