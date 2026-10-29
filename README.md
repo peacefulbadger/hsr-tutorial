@@ -15,7 +15,7 @@ game knowledge and every decision lives elsewhere.
 
 ## Endpoints
 
-`GET /frame` 窶・latest frame as `image/jpeg` (or `image/png` if configured), with
+`GET /frame` — latest frame as `image/jpeg` (or `image/png` if configured), with timing headers:
 timing headers:
 
 | Header | Meaning |
@@ -33,18 +33,18 @@ age_upper_ms = server_age_ms + rtt_ms
 ```
 
 `server_age_ms` is exact (same clock, both sides of the sidecar). `rtt_ms` is
-measured locally. The bound is pessimistic by at most one network leg 窶・if it
+measured locally. The bound is pessimistic by at most one network leg — if it
 passes your staleness budget, the truth passes too. `tools/check_lan.py` does
 exactly this.
 
-`POST /action` 窶・`{"type": "tap", "x": 640, "y": 680}`, or
+`POST /action` — `{"type": "tap", "x": 640, "y": 680}`, or
 `{"type": "swipe", "x":..,"y":..,"x2":..,"y2":..,"duration_ms":..}`,
 `{"type": "back"}`, `{"type": "wait", "duration_ms": ..}`.
 Coordinates are framebuffer pixels (1280x720), which is also the space
-`input tap` uses on this emulator build 窶・verified by tapping and watching the
+`input tap` uses on this emulator build — verified by tapping and watching the
 dialogue advance.
 
-`GET /health`, `GET /frame/meta`, `GET /stats` 窶・diagnostics.
+`GET /health`, `GET /frame/meta`, `GET /stats` — diagnostics.
 
 ## Run it
 
@@ -88,13 +88,13 @@ End-to-end through HTTP, 15 samples:
 
 Two conclusions that contradict the plan's assumptions:
 
-1. **PNG is the wrong transport.** The plan assumed 1窶・ Mbps and did not budget
+1. **PNG is the wrong transport.** The plan assumed 1–4 Mbps and did not budget
    encode latency; on-device PNG compression costs 315 ms/frame and caps capture
    at 3 Hz. Fetching raw pixels and encoding JPEG here is 2.4x faster and 10x
    smaller per frame. `--frame-format png` exists if the literal contract matters.
 2. **Input latency is not the bottleneck, capture is.** A tap dispatches in 25 ms.
    Frame freshness is bounded below by one screencap (~132 ms), so no amount of
-   tick rate gets below ~200 ms p50. Plan settle delays around 300窶・00 ms.
+   tick rate gets below ~200 ms p50. Plan settle delays around 300–400 ms.
 
 ## Phase 0 gate status
 
@@ -133,6 +133,56 @@ the plan is real, and an emulator snapshot path matters.
   and cost a whole failing run.
 - A single tap is unreliable: the SDK appears ~40 s before it accepts input.
 
+## Phase 1 gate status
+
+Gate: *on a recorded tutorial run, >=95% of frames get a correct screen type;
+choices and interactive-element labels are extractable with confidence sufficient
+for fuzzy matching against the reference.*
+
+Screen-type classification scores **41/42 = 97.6%** on hand-labelled frames, but
+the gate is **not met**, for two reasons that matter more than the number:
+
+1. **Three of the eight taxonomy classes have no examples at all.** The corpus
+   contains dialogue, combat, menu and loading. `dialogue_choice`, `reward` and
+   `transition` have never been recorded, so nothing about them is validated --
+   and `choices` extraction is unimplemented, so that half of the gate is not
+   merely unmeasured, it is missing.
+2. **Thresholds and regions were tuned on the same 42 frames** they are scored
+   on. 97.6% is an optimistic bound, not an estimate.
+
+What does hold up is the timeline check on unlabelled data: classifying all of
+`prologue-01` flips from `dialogue` to `combat` at 68s/73s, which is exactly where
+the session changed. That is a real signal, not a tuned one.
+
+### What perception actually does
+
+`frame -> features -> (maybe OCR) -> GameState`
+
+1. Near-black frame -> `loading`, no OCR at all.
+2. Teal action ring bottom-right -> `combat` (one pixel pass).
+3. Otherwise OCR once and read text: combat prompt above the subtitle strip ->
+   `combat`; title keywords -> `menu`; a subtitle line -> `dialogue`.
+4. Dark and detail-free -> `transition`, else `unknown`.
+
+### Three things that were wrong on the first attempt
+
+- **Region brightness does not classify HSR screens.** The first classifier used
+  only pixel statistics and scored 33%. The scene behind the HUD dominates:
+  the dialogue band is 93% dark on one frame and 71% on another, and combat loses
+  its teal ring entirely during attack animations. Text is the stable signal.
+- **The tutorial banner moves.** It sits at y~290 next to the target reticle and
+  y~558 beside the action button, so a fixed banner region fails silently on half
+  the combat steps.
+- **OCR output needs normalising.** It returns `Start.Game` and `Use BasicATKon`,
+  so exact substring matching misses both. Compare alphanumerics only.
+
+### OCR engine
+
+The plan specifies PaddleOCR. PaddlePaddle will not install on this box: it
+tries to downgrade numpy, which breaks the pinned opencv build, then dies on a
+locked `cv2.pyd`. RapidOCR runs the same PP-OCR models on onnxruntime and installs
+in 7 s. `OcrEngine` is a Protocol, so swapping PaddleOCR in later is one class.
+
 ## Layout
 
 ```
@@ -143,6 +193,19 @@ sidecar_windows/     runs on Windows: adb -> HTTP
   server.py          FastAPI app
 emulator_control/    force-stop / relaunch the client
 tools/check_lan.py   latency + freshness probe, run from the laptop
+tools/gate0.py       the Phase 0 gate runner
+tools/record.py      replay recorder (frames + JSONL index)
+tools/evaluate_perception.py   screen-type scoring against labels
+tools/classify_replay.py       timeline over a whole replay
+tools/label_sample.py          labelling sheet generator
+core/                game-agnostic contracts (state, action)
+adapters/game.py     the GameAdapter protocol
+adapters/game_hsr/   everything HSR-specific
+  regions.py         UI geometry, read off real frames
+  features.py        cheap per-frame signals
+  perception.py      classifier + OCR + GameState assembly
+  render.py          GameState -> Mica text
+  resolve.py         action ids -> coordinates
 configs/             runtime config
-tests/               fake-adb tests, no emulator needed
+tests/               no emulator, no adb, no network
 ```
