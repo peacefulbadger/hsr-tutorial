@@ -138,16 +138,21 @@ class HsrPerception:
 
         # Combat prompts sit above the subtitle strip (the banner moves between
         # tutorial steps), so search everything above it.
-        upper_text = _norm(" ".join(b.text for b in boxes if b.bbox[1] < R.DIALOGUE_BAND[1] - 20))
-        if upper_text and any(keyword in upper_text for keyword in COMBAT_KEYWORDS):
+        all_text = _norm(" ".join(b.text for b in boxes))
+        if all_text and any(keyword in all_text for keyword in COMBAT_KEYWORDS):
             return "combat", 0.85, feats, boxes
 
         joined = _norm(" ".join(b.text for b in boxes))
         if any(keyword in joined for keyword in MENU_KEYWORDS):
             return "menu", 0.8, feats, boxes
 
-        band = [b for b in boxes if b.bbox[1] >= R.DIALOGUE_BAND[1] - 20]
+        # Must be *inside* the band, not merely below its top edge: the UID
+        # string at the bottom-left sits at band height but outside band width,
+        # and matched on y alone it made every exploration frame "dialogue".
+        band = [b for b in boxes if _inside(b.bbox, R.DIALOGUE_BAND)]
         band_text = " ".join(b.text for b in band).strip()
+        # A subtitle is a long line; a short label near the band (a name plate,
+        # a prompt) must not be enough on its own.
         if len(band_text) >= 6:
             return "dialogue", 0.85, feats, boxes
 
@@ -176,7 +181,7 @@ class HsrPerception:
         numeric: dict[str, float] = {}
 
         if screen_type == "dialogue":
-            band_boxes = [b for b in boxes if b.bbox[1] >= R.DIALOGUE_BAND[1] - 20]
+            band_boxes = [b for b in boxes if _inside(b.bbox, R.DIALOGUE_BAND)]
             speaker, body = self._split_speaker(band_boxes)
             x, y, w, h = R.CONTINUE_CHEVRON
             elements.append(InteractiveElement(

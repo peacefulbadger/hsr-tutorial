@@ -176,3 +176,17 @@ def test_reward_outranks_the_combat_fast_lane(perception):
     state = perception.perceive(load("reward"), frame_path="x.jpg")
     assert state.screen_type == "reward"
     assert any("Battle Over" in text for text in state.text_blocks)
+
+@needs_ocr
+def test_exploration_is_not_mistaken_for_dialogue(perception):
+    """Regression: the UID string at the bottom-left sits at subtitle height but
+    outside the band's width. Matching on y alone made every exploration frame
+    classify as `dialogue`, which is most of the game's playtime.
+
+    `unknown` is the honest answer here: the plan's taxonomy has no
+    `exploration` class, which is itself a gap -- walking around is the state the
+    agent spends most of its time in.
+    """
+    screen_type, _confidence, _features = perception.classify(load("exploration"))
+    assert screen_type != "dialogue"
+    assert screen_type in {"unknown", "transition"}

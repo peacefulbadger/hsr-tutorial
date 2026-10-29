@@ -16,7 +16,7 @@ FRAME_HEIGHT = 720
 # --- dialogue / cutscene ------------------------------------------------------
 
 # The subtitle band: dark translucent strip carrying the spoken line.
-DIALOGUE_BAND = (150, 590, 980, 120)
+DIALOGUE_BAND = (150, 520, 980, 190)
 
 # Where the subtitle glyphs actually sit (inside the band, below the name).
 DIALOGUE_TEXT = (250, 630, 780, 70)
