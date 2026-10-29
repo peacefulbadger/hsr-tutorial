@@ -46,6 +46,7 @@ SCREEN_TYPES = (
 )
 
 MENU_KEYWORDS = ("startgame", "taptostart", "logout", "notices", "settings")
+REWARD_KEYWORDS = ("battleover", "victory", "rewards", "challengecomplete")
 COMBAT_KEYWORDS = (
     "basicatk", "selecttheenemy", "switchtoskills", "singletarget", "blast", "attack",
 )
@@ -125,6 +126,12 @@ class HsrPerception:
         if self._ocr is not None and self._ocr_enabled:
             boxes = self._ocr.read(frame)
 
+        # A result screen keeps the combat HUD behind it, so it must be checked
+        # before the teal-ring fast lane.
+        all_text = _norm(" ".join(b.text for b in boxes))
+        if any(keyword in all_text for keyword in REWARD_KEYWORDS):
+            return "reward", 0.9, feats, boxes
+
         # Fast lane: the teal action ring is unambiguous when present.
         if feats.teal_ring_pixels > 0.04:
             return "combat", 0.92, feats, boxes
@@ -191,6 +198,14 @@ class HsrPerception:
             ))
             if text_blocks:
                 numeric["tutorial_prompt"] = 1.0
+
+        elif screen_type == "reward":
+            # The result screen is dismissed by tapping; its text is the summary.
+            text_blocks = [b.text for b in boxes]
+            elements.append(InteractiveElement(
+                id="continue", label="continue", bbox=[520, 340, 240, 80],
+                kind="button", confidence=0.8,
+            ))
 
         elif screen_type == "menu":
             text_blocks = [b.text for b in boxes]

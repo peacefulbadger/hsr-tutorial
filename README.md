@@ -139,32 +139,56 @@ Gate: *on a recorded tutorial run, >=95% of frames get a correct screen type;
 choices and interactive-element labels are extractable with confidence sufficient
 for fuzzy matching against the reference.*
 
-Screen-type classification scores **41/42 = 97.6%** on hand-labelled frames, but
-the gate is **not met**, for two reasons that matter more than the number:
+Screen-type classification scores **42/44 = 95.5%** on hand-labelled frames across
+six classes, including a real `reward` screen captured by fighting the tutorial
+battle to "Battle Over".
 
-1. **Three of the eight taxonomy classes have no examples at all.** The corpus
-   contains dialogue, combat, menu and loading. `dialogue_choice`, `reward` and
-   `transition` have never been recorded, so nothing about them is validated --
-   and `choices` extraction is unimplemented, so that half of the gate is not
-   merely unmeasured, it is missing.
-2. **Thresholds and regions were tuned on the same 42 frames** they are scored
-   on. 97.6% is an optimistic bound, not an estimate.
+| class | n | recall |
+|---|---|---|
+| dialogue | 9 | 100% |
+| combat | 29 | 97% |
+| menu | 3 | 100% |
+| loading | 1 | 100% |
+| reward | 1 | 100% |
+| transition | 1 | 0% |
 
-What does hold up is the timeline check on unlabelled data: classifying all of
-`prologue-01` flips from `dialogue` to `combat` at 68s/73s, which is exactly where
-the session changed. That is a real signal, not a tuned one.
+**The gate is still not met**, on two counts:
+
+1. **`dialogue_choice` has no recorded example.** `choices` extraction is
+   unimplemented, so that half of the gate is missing, not merely unmeasured.
+   The other six classes are now exercised.
+2. **Thresholds and regions were tuned on the same frames they are scored on.**
+   95.5% is an optimistic bound, not an estimate.
+
+The independent check on unlabelled data still holds: classifying all of
+`prologue-01` flips `dialogue` -> `combat` at 68s/73s, exactly where the session
+changed.
+
+### The two misses, and why one of them is structural
+
+- `combat -> dialogue` on an attack-animation frame: for ~1s in every attack the
+  teal ring is gone and the tutorial prompt is not drawn, so the "combat" signals
+  genuinely are absent. Fixing it needs a temporal prior (the screen was combat a
+  frame ago), which the orchestrator has and a stateless classifier does not.
+- `transition -> loading` is not a bug: a single black frame cannot distinguish a
+  scene transition from a load. That distinction is a *duration*, so it belongs
+  in the orchestrator's state machine. The taxonomy keeps both labels; perception
+  reports the ambiguous one and the test asserts the ambiguity rather than
+  pretending otherwise.
 
 ### What perception actually does
 
 `frame -> features -> (maybe OCR) -> GameState`
 
 1. Near-black frame -> `loading`, no OCR at all.
-2. Teal action ring bottom-right -> `combat` (one pixel pass).
-3. Otherwise OCR once and read text: combat prompt above the subtitle strip ->
+2. Reward keyword ("Battle Over", ...) -> `reward`, checked *before* the combat
+   fast lane because the result screen keeps the combat HUD behind it.
+3. Teal action ring bottom-right -> `combat` (one pixel pass).
+4. Otherwise OCR once and read text: combat prompt above the subtitle strip ->
    `combat`; title keywords -> `menu`; a subtitle line -> `dialogue`.
-4. Dark and detail-free -> `transition`, else `unknown`.
+5. Dark and detail-free -> `transition`, else `unknown`.
 
-### Three things that were wrong on the first attempt
+### Four things that were wrong on the first attempt
 
 - **Region brightness does not classify HSR screens.** The first classifier used
   only pixel statistics and scored 33%. The scene behind the HUD dominates:
@@ -175,6 +199,10 @@ the session changed. That is a real signal, not a tuned one.
   the combat steps.
 - **OCR output needs normalising.** It returns `Start.Game` and `Use BasicATKon`,
   so exact substring matching misses both. Compare alphanumerics only.
+- **The combat button layout swaps.** The active action is the large button at
+  bottom-right; after "Switch to your Skill" the skill moves into that slot and
+  the basic attack becomes the small greyed one. Tapping a fixed point for
+  "attack" silently does nothing for long stretches.
 
 ### OCR engine
 

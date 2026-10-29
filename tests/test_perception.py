@@ -98,6 +98,7 @@ def test_dialogue_frame_has_no_teal_ring():
     ("combat", "combat"),
     ("menu", "menu"),
     ("loading", "loading"),
+    ("reward", "reward"),
 ])
 def test_screen_type_on_fixtures(perception, name, expected):
     screen_type, confidence, _features = perception.classify(load(name))
@@ -153,3 +154,25 @@ def test_screen_types_taxonomy_is_the_documented_one():
     assert "dialogue_choice" in SCREEN_TYPES
     assert "reward" in SCREEN_TYPES
     assert len(SCREEN_TYPES) == 8
+
+
+@needs_ocr
+def test_black_frame_is_ambiguous_between_loading_and_transition(perception):
+    """A single black frame cannot tell a scene transition from a load.
+
+    `loading` and `transition` are the same observation; separating them needs
+    temporal context (how long has it been dark), which belongs to the
+    orchestrator, not to a stateless frame classifier. Recording the ambiguity
+    here so the taxonomy mismatch is a known quantity rather than a surprise.
+    """
+    screen_type, _confidence, _features = perception.classify(load("transition"))
+    assert screen_type in {"loading", "transition"}
+
+
+@needs_ocr
+def test_reward_outranks_the_combat_fast_lane(perception):
+    """The result screen still has the combat HUD behind it, so the reward rule
+    must run before the teal-ring check."""
+    state = perception.perceive(load("reward"), frame_path="x.jpg")
+    assert state.screen_type == "reward"
+    assert any("Battle Over" in text for text in state.text_blocks)
