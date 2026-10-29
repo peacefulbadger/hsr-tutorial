@@ -196,11 +196,13 @@ class HsrPerception:
             x, y, w, h = box.bbox
             if not _inside(box.bbox, R.INTERACT_PROMPT):
                 continue
-            if not (60 <= w <= 240 and 18 <= h <= 44):
+            if not (40 <= w <= 240 and 18 <= h <= 44):
                 continue
             text = box.text.strip()
             if len(text) < 4 or box.confidence < 0.6:
                 continue
+            if not any(character.isalpha() for character in text):
+                continue  # "0/2" and a stray number are not object names
             if _norm(text).startswith(HUD_TEXT) or "mission" in _norm(text):
                 continue
             return InteractiveElement(

@@ -232,3 +232,43 @@ def test_interact_prompt_is_detected_by_shape_not_keyword(perception):
 def test_no_interact_prompt_when_standing_away(perception):
     state = perception.perceive(load("exploration"), frame_path="x.jpg")
     assert [e for e in state.interactive_elements if e.id == "interact"] == []
+
+
+# --- where the prompt can be drawn ---------------------------------------------------
+#
+# The plate is not in one fixed place: the "Controller" fixture has it right of the
+# character at x~822, while the terminal prompt sits in the same band the conversation
+# choices use. Both have to be found, and neither the quest tracker nor a quantity may
+# be mistaken for one.
+
+from adapters.game_hsr.perception import TextBox  # noqa: E402
+
+
+def box(text, bbox, confidence=0.95):
+    return TextBox(text=text, confidence=confidence, bbox=list(bbox))
+
+
+def test_the_prompt_is_found_in_the_choice_band():
+    prompt = HsrPerception().interact_prompt([box("Investigate", (560, 470, 122, 26))])
+    assert prompt is not None
+    assert prompt.label == "Investigate"
+    assert prompt.center == (621, 483)
+
+
+def test_the_prompt_is_found_right_of_the_character():
+    prompt = HsrPerception().interact_prompt([box("Controller", (822, 409, 115, 26))])
+    assert prompt is not None
+    assert prompt.label == "Controller"
+
+
+def test_a_quantity_in_the_band_is_not_a_prompt():
+    # "0/2" is the quest counter; it is the right size and the right place, and pressing
+    # it does nothing at all.
+    assert HsrPerception().interact_prompt([box("0/2", (600, 300, 45, 21))]) is None
+
+
+def test_the_quest_tracker_is_not_a_prompt():
+    assert HsrPerception().interact_prompt(
+        [box("Go to mission target", (63, 339, 187, 24))]) is None
+    assert HsrPerception().interact_prompt(
+        [box("Chaos In the Deep", (35, 233, 215, 29))]) is None

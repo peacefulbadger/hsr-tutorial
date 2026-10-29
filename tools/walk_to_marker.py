@@ -68,6 +68,9 @@ CAMERA_SWEEP_LIMIT = 14    # strokes before reversing; 14 x 260 px covers a full
 OCCLUSION_TOLERANCE = 2    # frames of a hidden pip the walker rides out before sweeping
 LOCK_TOLERANCE_PX = 90     # how far a locked marker may slide before the lock is dropped
 FACING_CONF_MIN = 0.4      # below this the dart's shape is not trustworthy
+# Disc pixels (0.3 m each) within which she is standing at the objective, whatever the
+# OCR'd metre label says. The label stops being drawn when it matters most.
+AT_OBJECT_PX = 12.0
 
 # A stall is the only evidence that something solid is in front, and on its own it says
 # nothing about where the way round is. So the decision is held for a few steps instead of
@@ -286,6 +289,23 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(0.4)
                 continue
             near_readings = 0
+
+            # The OCR distance label is not the only measure of "arrived": it disappears
+            # when she gets close, and it reads a rounded metre count off a marker that
+            # may be a different object entirely. The disc says how far the objective
+            # really is, so anything inside a few pixels is close enough to look for
+            # something to press -- and pressing it is the only way the quest advances.
+            if (view.pip_distance_px is not None
+                    and view.pip_distance_px <= AT_OBJECT_PX):
+                prompt = HsrPerception().interact_prompt(ocr.read(frame))
+                if prompt is not None:
+                    if not args.dry_run:
+                        x, y = prompt.center
+                        act(base, {"type": "tap", "x": x, "y": y})
+                    print(f"step {step:02d}: at the objective "
+                          f"({view.pip_distance_px:.0f}px); pressed {prompt.label!r} "
+                          f"at {prompt.center}")
+                    return 0
 
             # Getting closer cancels a detour: whatever she just did, it worked.
             if (detour_steps > 0 and detour_start_metres is not None
