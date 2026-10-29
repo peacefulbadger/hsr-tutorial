@@ -48,6 +48,8 @@ STOP_ON = {"dialogue", "dialogue_choice", "reward"}
 # "unknown" while a fight is plainly running. Tapping through "unknown" is safe -- during
 # an enemy turn the press is ignored -- and stopping there would stall the fight forever.
 TAP_THROUGH = {"combat", "unknown"}
+# Where the defeat panel's Retry button sits when its label cannot be read.
+RETRY_FALLBACK = (640, 470)
 
 
 def ultimate_point(frame: np.ndarray) -> tuple[int, int]:
@@ -104,6 +106,27 @@ def _centre_in(bbox, region) -> bool:
     rx, ry, rw, rh = region
     cx, cy = x + w / 2.0, y + h / 2.0
     return rx <= cx <= rx + rw and ry <= cy <= ry + rh
+
+
+def retry_point(boxes) -> tuple[int, int] | None:
+    """The Retry button on a defeat screen, if this is one.
+
+    The standing policy is to retry rather than stop: these tutorial fights are scripted
+    and winnable, and a wipe is a state to recover from, not a thing to report. The button
+    is located by its own label instead of a fixed point, since the defeat panel lays out
+    differently from the in-fight HUD.
+    """
+    for box in boxes:
+        text = box.text.lower()
+        if "retry" in text:
+            x, y, w, h = box.bbox
+            return x + w // 2, y + h // 2
+    return None
+
+
+def looks_like_defeat(boxes) -> bool:
+    compact = "".join(ch for ch in " ".join(b.text for b in boxes).lower() if ch.isalnum())
+    return any(keyword in compact for keyword in ("defeat", "challengefailed", "missionfailed"))
 
 
 def tutorial_request(boxes) -> str | None:
@@ -169,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     last = ""
     seen_combat = False
     stop_confirmations = 0
+    losses = 0
     while time.monotonic() < deadline:
         frame = fetch(base)
         screen, confidence, _features, boxes = perception.analyze(frame)
@@ -177,6 +201,15 @@ def main(argv: list[str] | None = None) -> int:
         if screen != last:
             print(f"{time.strftime('%H:%M:%S')} {screen} ({confidence:.2f})")
             last = screen
+
+        if looks_like_defeat(boxes):
+            point = retry_point(boxes) or RETRY_FALLBACK
+            print(f"{time.strftime('%H:%M:%S')} defeat screen -> retry at {point}")
+            if not args.dry_run:
+                act(base, {"type": "tap", "x": point[0], "y": point[1]})
+            losses += 1
+            time.sleep(args.interval * 2)
+            continue
 
         if screen in TAP_THROUGH:
             seen_combat = True
