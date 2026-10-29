@@ -139,30 +139,47 @@ Gate: *on a recorded tutorial run, >=95% of frames get a correct screen type;
 choices and interactive-element labels are extractable with confidence sufficient
 for fuzzy matching against the reference.*
 
-Screen-type classification scores **42/44 = 95.5%** on hand-labelled frames across
-six classes, including a real `reward` screen captured by fighting the tutorial
+Screen-type classification scores **43/45 = 95.6%** on hand-labelled frames across
+seven classes, including a real `reward` screen captured by fighting the tutorial
 battle to "Battle Over".
 
 | class | n | recall |
 |---|---|---|
 | dialogue | 9 | 100% |
+| dialogue_bark | 1 | 100% |
 | combat | 29 | 97% |
 | menu | 3 | 100% |
 | loading | 1 | 100% |
 | reward | 1 | 100% |
 | transition | 1 | 0% |
 
+The taxonomy is **nine classes, one more than the plan lists**. The extra one is
+`dialogue_bark`: a subtitle that plays while the character keeps walking, which is
+visually a dialogue and functionally nothing at all. It is a separate class
+because folding it in would make the policy shell tap "continue" on every ambient
+line, forever. Barks are told apart by whether the movement HUD survives — the
+sprint/attack cluster measures 0.038 near-white during a bark and <= 0.0075 on all
+nine blocking-dialogue frames — and a bark deliberately exposes *no* interactive
+elements, because pressing something is exactly what it does not ask for.
+
 **The gate is still not met**, on two counts:
 
 1. **`dialogue_choice` has no recorded example.** `choices` extraction is
    unimplemented, so that half of the gate is missing, not merely unmeasured.
-   The other six classes are now exercised.
+   The other seven classes are now exercised.
 2. **Thresholds and regions were tuned on the same frames they are scored on.**
    95.5% is an optimistic bound, not an estimate.
 
 The independent check on unlabelled data still holds: classifying all of
 `prologue-01` flips `dialogue` -> `combat` at 68s/73s, exactly where the session
 changed.
+
+### Note on exploration
+
+Walking around resolves to `unknown`, and that is a plan gap rather than a
+classifier failure: the taxonomy has no `exploration` class although it is the
+state the agent spends most of its time in. Recorded as a test so it stays
+visible.
 
 ### The two misses, and why one of them is structural
 
