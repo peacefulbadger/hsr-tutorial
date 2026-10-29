@@ -195,7 +195,19 @@ def main(argv: list[str] | None = None) -> int:
             missing_pip = 0
             continue
 
-        # No world pip: the minimap knows the world bearing, the screen does not.
+        # No world pip. The screen was the better measurement while it lasted, so keep
+        # walking the way it said for a couple of steps before trusting the minimap: a
+        # pip vanishing is usually a pillar, and the minimap can be reading a different
+        # gold diamond entirely (chests and anchors share the colour).
+        if missing_pip <= OCCLUSION_TOLERANCE:
+            if not args.dry_run:
+                push_at(base, stick_angle, magnitude_px=150)
+            print(f"step {step:02d}: pip briefly hidden ({missing_pip}); "
+                  f"holding stick {stick_angle:+6.1f}")
+            missing_pip += 1
+            time.sleep(0.3)
+            continue
+
         if heading_error is not None and abs(heading_error) > HEADING_TOL_DEG:
             stick_angle = wrap(stick_angle + heading_error)
             if not args.dry_run:
@@ -203,18 +215,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"step {step:02d}: heading {heading_error:+6.1f} deg "
                   f"(facing {view.facing_deg:5.1f}, objective {view.bearing_deg:5.1f})"
                   f" -> stick {stick_angle:+6.1f}")
-            time.sleep(0.3)
-            continue
-
-        # The pip drops out for a frame or two behind a pillar or a doorway. Sweeping the
-        # camera for that loses the heading the servo just found, so keep walking first:
-        # the heading is aligned, which means forward is still the right way to go.
-        if missing_pip <= OCCLUSION_TOLERANCE and heading_error is not None:
-            if not args.dry_run:
-                push_at(base, stick_angle, magnitude_px=150)
-            print(f"step {step:02d}: pip briefly hidden ({missing_pip}); "
-                  f"holding stick {stick_angle:+6.1f}")
-            missing_pip += 1
             time.sleep(0.3)
             continue
 

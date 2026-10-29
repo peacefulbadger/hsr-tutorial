@@ -31,6 +31,7 @@ from typing import Protocol
 import numpy as np
 
 from adapters.game_hsr import regions as R
+from adapters.game_hsr.choices import find_options
 from adapters.game_hsr.features import Features, extract
 from core.state import GameState, InteractiveElement
 
@@ -150,6 +151,11 @@ class HsrPerception:
         if any(keyword in joined for keyword in MENU_KEYWORDS):
             return "menu", 0.8, feats, boxes
 
+        # Checked before the subtitle rule: a choice screen keeps its prompt line in the
+        # band, so the dialogue tests would happily claim it and hide the options.
+        if len(find_options(boxes)) >= 2:
+            return "dialogue_choice", 0.8, feats, boxes
+
         # Must be *inside* the band, not merely below its top edge: the UID
         # string at the bottom-left sits at band height but outside band width,
         # and matched on y alone it made every exploration frame "dialogue".
@@ -224,6 +230,19 @@ class HsrPerception:
             if speaker:
                 numeric["speaker_known"] = 1.0
             text_blocks = [body] if body else []
+
+        elif screen_type == "dialogue_choice":
+            # The prompt may sit in the band above the options, exactly like a subtitle.
+            band_boxes = [b for b in boxes if _inside(b.bbox, R.DIALOGUE_BAND)]
+            _speaker, body = self._split_speaker(band_boxes)
+            text_blocks = [body] if body else []
+            options = find_options(boxes)
+            choices = [option.text for option in options]
+            for index, option in enumerate(options):
+                elements.append(InteractiveElement(
+                    id=f"choice_{index}", label=option.text, bbox=option.bbox,
+                    kind="choice", confidence=option.confidence,
+                ))
 
         elif screen_type == "dialogue_bark":
             # Same text as a dialogue, but nothing to press: the world keeps
