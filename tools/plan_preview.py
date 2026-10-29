@@ -36,23 +36,20 @@ def render(frame: np.ndarray) -> tuple[np.ndarray, str]:
     route = navigation.plan(frame, view)
     disc = navigation._disc(frame)
     mask = navigation.obstacle_mask(disc)
-    state = navigation.occupancy(disc, view)
+    grid = navigation._grid(mask)
 
     panel = cv2.resize(disc, None, fx=SCALE, fy=SCALE, interpolation=cv2.INTER_NEAREST)
 
-    # Shade the grid, so it is obvious what the planner believes: red is a wall, amber is
-    # floor it cannot see because the dart is drawn over it, and unshaded is free.
-    shades = {navigation.BLOCKED: (0, 0, 140), navigation.UNKNOWN: (0, 170, 255)}
-    for row in range(state.shape[0]):
-        for col in range(state.shape[1]):
-            colour = shades.get(int(state[row, col]))
-            if colour is None:
+    # Shade the blocked cells, so it is obvious what the planner thinks is a wall.
+    for row in range(grid.shape[0]):
+        for col in range(grid.shape[1]):
+            if not grid[row, col]:
                 continue
             top_left = (col * navigation.CELL * SCALE, row * navigation.CELL * SCALE)
             bottom_right = (top_left[0] + navigation.CELL * SCALE,
                             top_left[1] + navigation.CELL * SCALE)
             overlay = panel.copy()
-            cv2.rectangle(overlay, top_left, bottom_right, colour, -1)
+            cv2.rectangle(overlay, top_left, bottom_right, (0, 0, 140), -1)
             cv2.addWeighted(overlay, 0.35, panel, 0.65, 0, panel)
 
     if route.path:
@@ -73,11 +70,10 @@ def render(frame: np.ndarray) -> tuple[np.ndarray, str]:
         f"dist={None if view.pip_distance_px is None else round(view.pip_distance_px)} "
         f"route={route.bearing_deg if route.bearing_deg is None else round(route.bearing_deg)} "
         f"detour={route.detour_deg if route.detour_deg is None else round(route.detour_deg)} "
-        f"blocked={route.blocked} cells={len(route.path)} unseen={route.unknown_cells}"
+        f"blocked={route.blocked} cells={len(route.path)}"
     )
     bars = [
-        f"obstacle px={int(mask.sum())} walls={int((state == navigation.BLOCKED).sum())} "
-        f"unseen={int((state == navigation.UNKNOWN).sum())}",
+        f"obstacle px={int(mask.sum())} blocked cells={int(grid.sum())}/{grid.size}",
         summary,
     ]
     for index, text in enumerate(bars):
