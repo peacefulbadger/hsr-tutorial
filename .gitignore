@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Phase 0 scratch: probe frames, diffs, ad-hoc captures.
+_probe/
+
+# Recorded frames/labels are git-lfs material later, not repo blobs now.
+data/
+!data/.gitkeep
