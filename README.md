@@ -303,6 +303,23 @@ Two more things that read as "the game ignored me":
   has to show an actual spoken line (8+ characters) to be believed — an ultimate's
   close-up and its floating damage numbers otherwise look like subtitles.
 
+## When the game stops accepting input at all
+
+Half an hour went into this one, and it is worth recognising because every health check
+says the client is fine: frames arrive at 6 Hz, `adb shell input` succeeds, the sidecar
+reports 36-45 ms dispatch, the ping counter keeps ticking — and absolutely nothing moves.
+Taps, swipes and the Back key are all ignored.
+
+Ruled out in order: the transport (dispatch really was fine), a minimised window (it was
+not; restoring and foregrounding changed nothing), and Android focus (`mCurrentFocus` was
+`com.mihoyo.combosdk.ComboSDKActivity` both while input was dead *and* after it recovered,
+so that is what the healthy client looks like too). What fixed it was force-stopping and
+relaunching the package, then Start Game and Tap to Start.
+
+The lesson is that the only honest test is whether the game *reacted*:
+`tools/input_check.py` sends one camera drag and measures the frame change, because a
+component reporting that it dispatched a press proves nothing about where it landed.
+
 
 
 Interaction is a labelled button, named after the object: `Investigate` at one
