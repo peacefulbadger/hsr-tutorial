@@ -48,7 +48,7 @@ import numpy as np
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from adapters.game_hsr import minimap  # noqa: E402
+from adapters.game_hsr import minimap, navigation  # noqa: E402
 from adapters.game_hsr.perception import HsrPerception, RapidOcr  # noqa: E402
 
 DISTANCE_RE = re.compile(r"^(\d{1,3})\s*m$", re.IGNORECASE)
@@ -63,6 +63,7 @@ STICK_DURATION_MS = 750
 CAMERA_STROKE_PX = 260
 CAMERA_SWEEP_LIMIT = 14    # strokes before reversing; 14 x 260 px covers a full turn
 OCCLUSION_TOLERANCE = 2    # frames of a hidden pip the walker rides out before sweeping
+LOCK_TOLERANCE_PX = 90     # how far a locked marker may slide before the lock is dropped
 FACING_CONF_MIN = 0.4      # below this the dart's shape is not trustworthy
 
 
@@ -99,8 +100,14 @@ def rotate(base: str, direction: int, magnitude: int = CAMERA_STROKE_PX) -> None
                "x2": centre + direction * magnitude, "y2": 360, "duration_ms": 650})
 
 
-def world_pip(ocr, frame) -> tuple[int, int, int] | None:
-    """The 3D objective marker, located by its distance label."""
+def world_pips(ocr, frame) -> list[tuple[int, int, int]]:
+    """Every labelled 3D objective marker on screen: (x, y, metres), left to right.
+
+    There is usually more than one. A quest like "investigating the terminals 0/2" puts a
+    labelled diamond on each terminal, and chasing "whichever the OCR returned first"
+    makes the walker oscillate between two valid targets without reaching either.
+    """
+    pips: list[tuple[int, int, int]] = []
     for box in ocr.read(frame):
         text = box.text.replace(" ", "")
         match = DISTANCE_RE.match(text)
@@ -108,8 +115,27 @@ def world_pip(ocr, frame) -> tuple[int, int, int] | None:
             continue
         x, y, w, h = box.bbox
         # The label sits under the diamond; report the label centre.
-        return x + w // 2, y + h // 2, int(match.group(1))
-    return None
+        pips.append((x + w // 2, y + h // 2, int(match.group(1))))
+    return sorted(pips, key=lambda pip: pip[0])
+
+
+def choose_pip(pips: list[tuple[int, int, int]],
+               locked_x: int | None) -> tuple[tuple[int, int, int] | None, int | None]:
+    """Pick one target and stay with it: the lock is what stops the thrash.
+
+    A locked target is kept while a candidate sits within LOCK_TOLERANCE_PX of where it
+    was, because the marker slides as the camera turns but not by hundreds of pixels.
+    """
+    if not pips:
+        return None, None
+    if locked_x is not None:
+        nearest = min(pips, key=lambda pip: abs(pip[0] - locked_x))
+        if abs(nearest[0] - locked_x) <= LOCK_TOLERANCE_PX:
+            return nearest, nearest[0]
+    # No usable lock: prefer the marker nearest the centre, which is where the active
+    # objective tends to be, and where steering has the most room before it leaves view.
+    chosen = min(pips, key=lambda pip: abs(pip[0] - SCREEN_CENTRE_X))
+    return chosen, chosen[0]
 
 
 def wrap(angle: float) -> float:
@@ -139,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     stalls = 0
     missing_pip = OCCLUSION_TOLERANCE + 1  # nothing seen yet, so a sweep is fair game
     previous_pip: tuple[int, int] | None = None
+    locked_x: int | None = None
+    smoothed_route: float | None = None
     last_metres: int | None = None
     near_readings = 0
 
@@ -158,7 +186,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         view = minimap.read(frame)
-        pip = world_pip(ocr, frame)
+        candidates = world_pips(ocr, frame)
+        pip, locked_x = choose_pip(candidates, locked_x)
+        if pip is not None and len(candidates) > 1:
+            print(f"step {step:02d}: {len(candidates)} markers on screen; tracking "
+                  f"the one at x={pip[0]} ({pip[2]}m)")
         # The distance label is OCR'd digits, and OCR misreads them: "79m" came back as
         # "3m" and then "1m" on consecutive frames, which reads as a teleport and then as
         # an arrival. Walking is continuous, so enforce that instead of trusting one frame.
@@ -170,6 +202,47 @@ def main(argv: list[str] | None = None) -> int:
         # corrupts the dart's shape; a low-confidence facing is worse than none, because
         # it turns into a confident push in the wrong direction.
         heading_error = view.turn_deg if view.facing_confidence >= FACING_CONF_MIN else None
+
+        # Route through the minimap before steering at the marker: the white lines are the
+        # room's walls and furniture, and walking at the marker ignores them, which is how
+        # the character ends up parked against a desk with the objective 8 m away.
+        route = navigation.plan(frame, view)
+        if route.blocked:
+            print(f"step {step:02d}: no route to the marker; sweeping the camera to see "
+                  f"more of the room")
+            if not args.dry_run:
+                rotate(base, sweep_direction)
+            sweeps_in_direction += 1
+            time.sleep(0.35)
+            continue
+        if route.needs_detour and route.bearing_deg is not None and view.facing_deg is not None:
+            if smoothed_route is None:
+                smoothed_route = route.bearing_deg
+            else:
+                delta = wrap(route.bearing_deg - smoothed_route)
+                if abs(delta) > 60.0:
+                    # The disc's pip and arrow are re-detected every frame and both jitter,
+                    # so a route that jumps 60 deg in one step is a bad reading, not a
+                    # corner. Skip it instead of steering on it.
+                    print(f"step {step:02d}: route bearing jumped {delta:+.0f} deg; "
+                          f"waiting for a stable reading")
+                    smoothed_route = None
+                    time.sleep(0.3)
+                    continue
+                smoothed_route = wrap(smoothed_route + 0.5 * delta)
+            error = wrap(smoothed_route - view.facing_deg)
+            correction = max(-MAX_HEADING_STEP_DEG, min(MAX_HEADING_STEP_DEG, error))
+            stick_angle = wrap(stick_angle + correction)
+            if not args.dry_run:
+                push_at(base, stick_angle,
+                        magnitude_px=STICK_MAGNITUDE_PX if abs(error) > HEADING_TOL_DEG else 150)
+            print(f"step {step:02d}: route bends {route.detour_deg:+.0f} deg around the "
+                  f"lines -> waypoint {smoothed_route:.0f}, stick {stick_angle:+.1f} "
+                  f"(facing {view.facing_deg:.0f})")
+            previous_pip = None
+            stuck_steps = 0
+            time.sleep(0.3)
+            continue
 
         if pip is not None:
             pip_x, pip_y, metres = pip

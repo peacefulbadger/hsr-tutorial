@@ -36,7 +36,7 @@ def _frame(*, facing_deg=None, bearing_deg=None, distance=40.0,
         # A pale teal wedge, like the camera's view cone: same family as the arrow but
         # far less saturated. It must not be mistaken for the player marker.
         wedge = np.array([[cx, cy], [cx - 60, cy - 40], [cx - 20, cy + 55]], np.int32)
-        cv2.fillConvexPoly(hsv, wedge, (95, 70, 120))
+        cv2.fillPoly(hsv, [wedge], (95, 70, 120))
 
     if facing_deg is not None:
         pts = _rotate(DART, facing_deg)
@@ -48,7 +48,7 @@ def _frame(*, facing_deg=None, bearing_deg=None, distance=40.0,
         px = cx + distance * math.sin(math.radians(bearing_deg))
         py = cy - distance * math.cos(math.radians(bearing_deg))
         diamond = np.array([[px, py - 6], [px + 5, py], [px, py + 6], [px - 5, py]], np.int32)
-        cv2.fillConvexPoly(hsv, diamond, (25, 200, 255))  # gold
+        cv2.fillPoly(hsv, [diamond], (25, 200, 255))  # gold
 
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 

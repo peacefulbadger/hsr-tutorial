@@ -90,7 +90,7 @@ def _arrow_mask(disc: np.ndarray) -> np.ndarray | None:
         return None
     h, w = disc.shape[:2]
     centre = np.array([w / 2.0, h / 2.0])
-    best, best_score = None, -1.0
+    best, best_score = None, float("-inf")
     for i in range(1, count):
         area = int(stats[i, cv2.CC_STAT_AREA])
         if not (ARROW_AREA[0] <= area <= ARROW_AREA[1]):
@@ -125,7 +125,9 @@ def _facing_by_notch(blob: np.ndarray) -> tuple[float | None, float]:
 
     pts = np.column_stack([xs, ys]).astype(np.int32)
     hull_mask = np.zeros_like(blob)
-    cv2.fillConvexPoly(hull_mask, cv2.convexHull(pts), 1)
+    # fillPoly, not fillConvexPoly: this OpenCV build (5.0.0) can hang inside the convex
+    # fill, and this runs on every frame. For a hull the filled result is identical.
+    cv2.fillPoly(hull_mask, [cv2.convexHull(pts)], 1)
 
     notch = ((hull_mask == 1) & (blob == 0)).astype(np.uint8)
     if int(notch.sum()) < 4:
