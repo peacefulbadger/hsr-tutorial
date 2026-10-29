@@ -49,7 +49,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adapters.game_hsr import minimap  # noqa: E402
-from adapters.game_hsr.perception import RapidOcr  # noqa: E402
+from adapters.game_hsr.perception import HsrPerception, RapidOcr  # noqa: E402
 
 DISTANCE_RE = re.compile(r"^(\d{1,3})\s*m$", re.IGNORECASE)
 STICK = (250, 570)
@@ -188,6 +188,19 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 stuck_steps = 0
             if stuck_steps >= 2:
+                # Standing at the objective and not moving is usually a door or a console,
+                # not a bad heading: the pip is centred and the walk is straight, so the
+                # thing in the way is something to press. The prompt is named after the
+                # object ("Controller", "Investigate"), so it is found structurally.
+                prompt = HsrPerception().interact_prompt(ocr.read(frame))
+                if prompt is not None and not args.dry_run:
+                    x, y = prompt.center
+                    act(base, {"type": "tap", "x": x, "y": y})
+                    print(f"step {step:02d}: blocked at {metres}m; pressed "
+                          f"{prompt.label!r} at ({x},{y})")
+                    stuck_steps = 0
+                    time.sleep(0.8)
+                    continue
                 if not args.dry_run:
                     push(base, 0, 80, 900)
                     time.sleep(0.2)
