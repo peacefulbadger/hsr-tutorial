@@ -61,19 +61,10 @@ TUTORIAL_BANNER = (400, 250, 560, 400)
 # blocking dialogue -- which is how a bark is told apart from a real one.
 HUD_ACTIONS = (990, 500, 270, 160)
 
-# The interaction prompt: a dark rounded plate with a small glyph and a label, named
+# The interaction prompt: a labelled button to the right of the character, named
 # after whatever the object is ("Investigate", "Controller", "Read"). The label is
 # arbitrary, so detection must be structural, not a keyword list.
-#
-# It is drawn in two places, and both have been seen on real frames:
-#   - to the right of the character, plate around x 770-950 at y ~400 (the "Controller"
-#     fixture), and
-#   - in the same band the conversation choices use, x 380-1180 y 250-630, which is
-#     where the terminal prompt sits.
-# The region is the union; the shape filters are what discriminate. The quest tracker is
-# left of x=380, the party UI is above y=250, and a distance label like "1m" is too narrow
-# to be a label.
-INTERACT_PROMPT = (380, 250, 880, 340)
+INTERACT_PROMPT = (700, 330, 560, 220)
 
 # --- shared ------------------------------------------------------------------
 
