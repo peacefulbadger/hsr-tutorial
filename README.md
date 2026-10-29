@@ -273,6 +273,37 @@ with the tutorial banner *"Attack selected enemy to trigger combat"* up, the sti
 does nothing: the game is gated on a tap, and the loop that only walks reports a
 stuck character. Check for a tutorial instruction before concluding the walk failed.
 
+The distance label is also OCR'd digits, so it lies. `79m` came back as `3m` and then
+`1m` on consecutive frames, which ended a walk 60 m short of the target. Walking is
+continuous, so the walker rejects a reading that jumps more than 15 m, and an arrival
+has to be seen twice.
+
+## Tutorial gates (the game stops listening)
+
+The tutorial blocks input in two different shapes, and they need different presses.
+Both look like a frozen game, and both cost minutes before they were recognised:
+
+| Shape | Where | What it waits for |
+|---|---|---|
+| banner | top of screen, above the turn indicator | the button it names in words: *"Attack selected enemy to trigger combat"*, *"Activate your Ultimate now"* |
+| tooltip | bordered panel mid-left, with a down-chevron | its own chevron, just inside the panel's lower-right corner; nothing else registers |
+
+Reading the banner's own words is the only reliable way to know which press is wanted —
+the highlighted button is drawn differently every time the step changes. The tooltip has
+no such text to act on, so its chevron is located from the union of the text inside it.
+
+Two more things that read as "the game ignored me":
+
+- **Ultimates interrupt.** The tutorial asks for one *while the enemy is acting*, so an
+  enemy-turn guard suppresses exactly the press that is wanted. The charged portrait also
+  moves with whoever has energy, so the button is located by its glow, not by slot.
+- **Combat frames lose their tell.** Between turns the action button hides, the teal ring
+  vanishes with it, and the frame fell through to `dialogue`. `your turn` / `enemy's turn`
+  / `total damage` / `voidranger` are combat keywords now, and a `dialogue` during combat
+  has to show an actual spoken line (8+ characters) to be believed — an ultimate's
+  close-up and its floating damage numbers otherwise look like subtitles.
+
+
 
 Interaction is a labelled button, named after the object: `Investigate` at one
 console, `Controller` at another. Since the label is arbitrary, detection is

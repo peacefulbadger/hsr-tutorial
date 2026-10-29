@@ -36,6 +36,11 @@ ACTION_BUTTON = (1045, 590)
 # first slot no matter which character was ready and did nothing for hundreds of seconds.)
 ULTIMATE_REGION = (150, 460, 520, 220)
 ULTIMATE_FALLBACK = (430, 570)
+# Where tutorial tooltips open, mid-left. Their dismiss chevron sits inside the panel's
+# lower-right corner; while one is open no other press registers.
+TUTORIAL_TIP_REGION = (240, 85, 400, 215)
+# The spoken line, for telling a real dialogue from combat's floating text.
+DIALOGUE_BAND = (150, 520, 980, 190)
 # Continue affordances: reward screens and dialogues advance on a click near the centre.
 CONTINUE_POINT = (640, 400)
 STOP_ON = {"dialogue", "dialogue_choice", "reward"}
@@ -71,6 +76,34 @@ def ultimate_point(frame: np.ndarray) -> tuple[int, int]:
     cx, cy = centroids[best]
     return int(x + cx), int(y + cy)
 
+
+
+def tutorial_tip_point(boxes, frame: np.ndarray) -> tuple[int, int] | None:
+    """The dismiss arrow of a tutorial tooltip, if one is open.
+
+    Tutorials show two different blocking things and they need different presses. A
+    *banner* (top of the screen) names a button and waits for that button. A *tooltip*
+    (a bordered panel mid-left) waits for its own down-chevron at the bottom-right, and
+    while it is open nothing else registers -- the fight sits on "Enemy's Turn" forever,
+    which looks exactly like a frozen game. The chevron sits just inside the panel's
+    lower-right corner, and the panel hugs its text, so the text union locates it.
+    """
+    x, y, w, h = TUTORIAL_TIP_REGION
+    inside = [box for box in boxes if _centre_in(box.bbox, (x, y, w, h))]
+    if not inside:
+        return None
+    left = min(box.bbox[0] for box in inside)
+    top = min(box.bbox[1] for box in inside)
+    right = max(box.bbox[0] + box.bbox[2] for box in inside)
+    bottom = max(box.bbox[1] + box.bbox[3] for box in inside)
+    return min(620, right + 18), min(300, bottom + 22)
+
+
+def _centre_in(bbox, region) -> bool:
+    x, y, w, h = bbox
+    rx, ry, rw, rh = region
+    cx, cy = x + w / 2.0, y + h / 2.0
+    return rx <= cx <= rx + rw and ry <= cy <= ry + rh
 
 
 def tutorial_request(boxes) -> str | None:
@@ -147,6 +180,13 @@ def main(argv: list[str] | None = None) -> int:
 
         if screen in TAP_THROUGH:
             seen_combat = True
+            tip = tutorial_tip_point(boxes, frame)
+            if tip is not None:
+                print(f"{time.strftime('%H:%M:%S')} tutorial tooltip open -> dismiss {tip}")
+                if not args.dry_run:
+                    act(base, {"type": "tap", "x": tip[0], "y": tip[1]})
+                time.sleep(args.interval)
+                continue
             turn = whose_turn(boxes)
             request = tutorial_request(boxes)
             if request == "ultimate":
@@ -168,9 +208,17 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         if screen in STOP_ON and seen_combat:
-            # Combat frames flicker: a damage number or an ultimate banner in the subtitle
-            # band reads as "dialogue" for one frame. Stopping on that leaves the fight
-            # half-finished, so demand the state twice before believing it.
+            # "dialogue" mid-fight is usually a lie: damage numbers, an ultimate name, or
+            # the character close-up of an ultimate animation all read as subtitle text.
+            # A real blocking dialogue has a spoken line, so ask for one.
+            subtitle = " ".join(box.text for box in boxes
+                                if _centre_in(box.bbox, DIALOGUE_BAND)).strip()
+            if screen == "dialogue" and len(subtitle) < 8:
+                if not args.dry_run:
+                    act(base, {"type": "tap", "x": ACTION_BUTTON[0], "y": ACTION_BUTTON[1]})
+                time.sleep(args.interval)
+                continue
+            # Combat frames also flicker, so demand the stop state twice before believing it.
             stop_confirmations += 1
             if stop_confirmations < 2:
                 time.sleep(args.interval)
