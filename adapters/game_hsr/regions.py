@@ -56,6 +56,11 @@ WAVE_COUNTER = (40, 8, 90, 40)
 # box covers both; anything drawn inside it is prompt text.
 TUTORIAL_BANNER = (400, 250, 560, 400)
 
+# Movement HUD: joystick (bottom left) and the sprint/attack cluster (bottom
+# right). Present while the player controls the character, absent during a
+# blocking dialogue -- which is how a bark is told apart from a real one.
+HUD_ACTIONS = (990, 500, 270, 160)
+
 # --- shared ------------------------------------------------------------------
 
 # Where a modal choice list would render (no confirmed example in the current
@@ -71,4 +76,5 @@ FEATURE_REGIONS: dict[str, tuple[int, int, int, int]] = {
     "action_button": ACTION_BUTTON,
     "party_panel": PARTY_PANEL,
     "enemy_hp": ENEMY_HP,
+    "hud_actions": HUD_ACTIONS,
 }

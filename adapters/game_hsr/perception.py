@@ -37,6 +37,7 @@ from core.state import GameState, InteractiveElement
 SCREEN_TYPES = (
     "loading",
     "dialogue",
+    "dialogue_bark",
     "dialogue_choice",
     "combat",
     "reward",
@@ -154,6 +155,11 @@ class HsrPerception:
         # A subtitle is a long line; a short label near the band (a name plate,
         # a prompt) must not be enough on its own.
         if len(band_text) >= 6:
+            # Subtitles over a live movement HUD are a bark: the world keeps
+            # running and the player is not asked for anything. A blocking
+            # dialogue removes the HUD and adds a continue affordance.
+            if feats.hud_actions > 0.02:
+                return "dialogue_bark", 0.8, feats, boxes
             return "dialogue", 0.85, feats, boxes
 
         if feats.edge_density < 0.02:
@@ -189,6 +195,13 @@ class HsrPerception:
             ))
             if speaker:
                 numeric["speaker_known"] = 1.0
+            text_blocks = [body] if body else []
+
+        elif screen_type == "dialogue_bark":
+            # Same text as a dialogue, but nothing to press: the world keeps
+            # running, so surfacing a "continue" action here would be a lie.
+            band_boxes = [b for b in boxes if _inside(b.bbox, R.DIALOGUE_BAND)]
+            _speaker, body = self._split_speaker(band_boxes)
             text_blocks = [body] if body else []
 
         elif screen_type == "combat":

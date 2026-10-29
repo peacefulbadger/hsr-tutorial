@@ -99,6 +99,7 @@ def test_dialogue_frame_has_no_teal_ring():
     ("menu", "menu"),
     ("loading", "loading"),
     ("reward", "reward"),
+    ("dialogue_bark", "dialogue_bark"),
 ])
 def test_screen_type_on_fixtures(perception, name, expected):
     screen_type, confidence, _features = perception.classify(load(name))
@@ -150,10 +151,18 @@ def test_perceive_is_stateless(perception):
     assert [e.id for e in first.interactive_elements] == [e.id for e in again.interactive_elements]
 
 
-def test_screen_types_taxonomy_is_the_documented_one():
+def test_screen_types_taxonomy_extends_the_plan_by_one():
+    """The plan lists eight screen types; the corpus forced a ninth.
+
+    `dialogue_bark` is a subtitle that plays while the world keeps running. It is
+    visually a dialogue and functionally nothing at all, so folding it into
+    `dialogue` would make the policy shell tap "continue" on every bark.
+    `dialogue_choice` is still unrecorded and remains unimplemented.
+    """
     assert "dialogue_choice" in SCREEN_TYPES
     assert "reward" in SCREEN_TYPES
-    assert len(SCREEN_TYPES) == 8
+    assert "dialogue_bark" in SCREEN_TYPES
+    assert len(SCREEN_TYPES) == 9
 
 
 @needs_ocr
@@ -190,3 +199,19 @@ def test_exploration_is_not_mistaken_for_dialogue(perception):
     screen_type, _confidence, _features = perception.classify(load("exploration"))
     assert screen_type != "dialogue"
     assert screen_type in {"unknown", "transition"}
+
+@needs_ocr
+def test_bark_surfaces_text_but_no_action(perception):
+    """A bark plays subtitles without taking control, so perception must not
+    offer a "continue" action: tapping nothing is not the same as tapping to
+    advance, and the policy shell would otherwise fire on every bark."""
+    state = perception.perceive(load("dialogue_bark"), frame_path="x.jpg")
+    assert state.screen_type == "dialogue_bark"
+    assert state.text_blocks, "the spoken line should still be readable"
+    assert state.interactive_elements == [], "a bark has nothing to press"
+
+
+@needs_ocr
+def test_blocking_dialogue_still_offers_continue(perception):
+    state = perception.perceive(load("dialogue"), frame_path="x.jpg")
+    assert [e.id for e in state.interactive_elements] == ["continue"]

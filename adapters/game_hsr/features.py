@@ -27,6 +27,9 @@ class Features:
     party_panel_bright: float
     # Combat HUD: enemy HP bars are thin bright horizontal bars over mid-screen.
     enemy_hp_bar_pixels: float
+    # Movement HUD (sprint/attack cluster, bottom right). High while the player
+    # has control, near zero during a blocking dialogue.
+    hud_actions: float
     # Generic motion/text density, useful for transition detection.
     edge_density: float
 
@@ -72,6 +75,9 @@ def extract(frame_bgr: np.ndarray, regions: dict[str, tuple[int, int, int, int]]
     _, hp_v, hp_s, hp_h = crop("enemy_hp")
     hp_bars = _count((hp_v > 120) & ((hp_h < 12) | (hp_h > 160)) & (hp_s > 90)) / float(hp_v.size)
 
+    _, hud_v, hud_s, _ = crop("hud_actions")
+    hud_actions = _count((hud_v > 205) & (hud_s < 45)) / float(hud_v.size)
+
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 60, 160)
     edge_density = _count(edges) / float(edges.size)
@@ -82,6 +88,7 @@ def extract(frame_bgr: np.ndarray, regions: dict[str, tuple[int, int, int, int]]
         dialogue_text_pixels=text_pixels,
         teal_ring_pixels=teal_ratio,
         party_panel_bright=party_bright,
+        hud_actions=hud_actions,
         enemy_hp_bar_pixels=hp_bars,
         edge_density=edge_density,
     )
